@@ -1,0 +1,665 @@
+# AI Task Workflow Rule
+
+## 1. 适用场景
+
+当我提供 `local-docs/ai-tasks/briefs/*.brief.md` 文件时，你需要进入「AI 任务工作流模式」。
+
+这个模式包含完整流程：
+
+```text
+Brief → Plan → Checkpoint 执行 → 用户验收 → Final Report
+```
+
+拿到 brief 后，不允许直接修改代码。  
+必须先阅读 brief 和项目相关代码，生成 implementation plan，等待用户确认后，再按 checkpoint 分阶段执行。
+
+---
+
+## 2. 文件目录规范
+
+所有 AI 任务相关文档统一放在：
+
+```text
+local-docs/ai-tasks/
+  briefs/
+  plans/
+  reports/
+```
+
+这些是本地 AI 协作过程文件，默认不提交到 Git。
+
+建议 `.gitignore` 中加入：
+
+```gitignore
+local-docs/
+```
+
+---
+
+## 3. 文件命名规则
+
+任务文件名统一使用：
+
+```text
+YYYY-MM-DD_task-name
+```
+
+要求：
+
+- 日期使用 `YYYY-MM-DD`
+- `task-name` 使用英文小写
+- 单词之间使用短横线 `-`
+- 不要使用中文、空格、特殊符号
+- brief、plan、report 必须使用同一个 `YYYY-MM-DD_task-name`
+
+示例：
+
+```text
+local-docs/ai-tasks/briefs/2026-06-15_game-ui-level-entry.brief.md
+local-docs/ai-tasks/plans/2026-06-15_game-ui-level-entry.plan.md
+local-docs/ai-tasks/reports/2026-06-15_game-ui-level-entry.report.md
+```
+
+---
+
+## 4. Brief 规则
+
+Brief 是用户提供的自然语言需求文件。
+
+Brief 只需要描述：
+
+- 我想做什么
+- 现在的问题
+- 期望效果
+- 必须保留
+- 不要做
+- 参考
+- 验收标准
+
+Brief 不是技术方案。  
+不要要求 brief 写清楚具体文件、组件、实现步骤。  
+具体技术落地方案应该由 AI 阅读项目代码后生成 plan。
+
+---
+
+## 5. Plan 生成规则
+
+当用户说：
+
+```text
+请基于 xxx.brief.md 生成 plan
+```
+
+你必须：
+
+1. 阅读指定 brief。
+2. 搜索项目中相关页面、组件、样式、数据、路由、资源、类型文件。
+3. 不要直接改代码。
+4. 生成对应 plan 文件到：
+
+```text
+local-docs/ai-tasks/plans/YYYY-MM-DD_task-name.plan.md
+```
+
+5. 在聊天中简要说明 plan 文件路径。
+6. 停下来等待用户确认。
+
+在 plan 被用户确认之前，你不能：
+
+- 修改业务代码
+- 修改样式文件
+- 新增资源
+- 删除文件
+- 重构组件
+- 安装依赖
+
+---
+
+## 6. Plan 内容要求
+
+Plan 文件必须包含：
+
+```md
+# Implementation Plan：任务名称
+
+## 1. 文件对应关系
+
+- Brief 文件：
+- Plan 文件：
+- Report 文件：
+
+## 2. 需求理解
+
+用自己的话总结本次任务要解决什么问题，以及最终希望达到什么效果。
+
+## 3. 项目现状分析
+
+说明你阅读了哪些相关代码，当前实现大概是什么结构。
+
+需要包含：
+
+- 相关页面
+- 相关组件
+- 相关样式
+- 相关数据 / 资源
+- 当前实现中的关键问题
+
+## 4. 涉及文件
+
+列出预计需要修改或新增的文件。
+
+格式：
+
+- `文件路径`：修改原因
+- `文件路径`：修改原因
+
+如果某些文件只是参考，不修改，也要标明「只读参考」。
+
+## 5. 实现思路
+
+描述具体落地方案。
+
+需要说明：
+
+- UI 如何调整
+- 交互逻辑如何调整
+- 数据结构是否变化
+- 样式如何复用
+- 是否影响其他页面
+- 如何保证 H5 适配
+- 是否需要新增 mock 数据
+- 是否需要新增资源
+
+## 6. Checkpoint 拆分
+
+将任务拆成 2～5 个 checkpoint。
+
+每个 checkpoint 需要包含：
+
+- 目标
+- 修改范围
+- 完成标准
+- 用户需要验收的内容
+
+## 7. 风险点
+
+列出可能风险。
+
+## 8. 需要用户确认的问题
+
+如果没有问题，写：暂无必须确认的问题。
+
+## 9. 验收标准
+
+列出完成后如何判断任务成功。
+
+## 10. 执行指令建议
+
+说明确认后建议先执行哪个 checkpoint。
+```
+
+---
+
+## 7. Plan 确认规则
+
+生成 plan 后必须停止。
+
+只有当用户明确说：
+
+```text
+确认 plan，执行 Checkpoint 1
+```
+
+或者：
+
+```text
+按这个 plan 执行 Checkpoint 1
+```
+
+你才能开始改代码。
+
+不要在用户未确认 plan 的情况下自动执行。
+
+---
+
+## 8. Checkpoint 执行规则
+
+默认一次只执行一个 checkpoint。
+
+除非用户明确说：
+
+```text
+连续执行 Checkpoint 1 和 Checkpoint 2
+```
+
+否则不能连续执行多个 checkpoint。
+
+每个 checkpoint 执行前，需要先复述：
+
+```md
+## 即将执行 Checkpoint X：名称
+
+### 本次目标
+
+-
+
+### 修改范围
+
+-
+
+### 不会处理
+
+-
+```
+
+然后再开始修改。
+
+---
+
+## 9. Checkpoint 执行中约束
+
+执行过程中必须遵守：
+
+- 只修改当前 checkpoint 涉及的内容
+- 不要顺手做 plan 外优化
+- 不要改无关文件
+- 不要删除已有逻辑
+- 不要引入未确认的新依赖
+- 如果发现 plan 不合理，先停下来说明
+- 如果遇到不确定点，先问用户
+- 如果发现会影响其他页面，先说明风险
+
+---
+
+## 10. Checkpoint 完成后必须停下来
+
+每完成一个 checkpoint，必须停下来汇报，并等待用户验收。
+
+汇报格式：
+
+```md
+# Checkpoint X 完成报告
+
+## 1. 已完成
+
+-
+
+## 2. 修改文件
+
+- `文件路径`：修改内容
+- `文件路径`：修改内容
+
+## 3. 验证结果
+
+- 页面是否能正常运行：
+- 是否有 TypeScript / ESLint 报错：
+- 是否有明显样式问题：
+- 是否影响其他页面：
+
+## 4. 需要用户验收
+
+请重点检查：
+
+-
+-
+
+## 5. 遗留问题
+
+-
+
+## 6. 下一步建议
+
+建议用户确认后继续执行 Checkpoint X。
+```
+
+Checkpoint 完成后，不允许自动继续下一个 checkpoint。  
+必须等用户明确说：
+
+```text
+验收通过，继续 Checkpoint 2
+```
+
+如果完成的是最后一个 checkpoint，完成报告里的「下一步建议」不能再写继续下一个 checkpoint。  
+必须明确提示：
+
+```text
+所有 checkpoint 已执行完成。请用户确认是否生成 final report。
+```
+
+在最后一个 checkpoint 完成后，不允许静默结束流程。  
+必须主动询问用户是否确认任务结束并生成 final report。
+
+---
+
+## 11. 用户验收规则
+
+每个 checkpoint 完成后，用户需要检查效果。
+
+用户可能会：
+
+- 确认通过
+- 要求微调
+- 要求回滚部分修改
+- 要求修改 plan
+- 要求继续下一个 checkpoint
+
+如果用户提出微调，你需要判断：
+
+```text
+这个微调属于当前 checkpoint 收尾
+还是应该新增 checkpoint
+```
+
+如果是小改，可以继续处理。  
+如果影响范围较大，需要更新 plan 或新增 checkpoint。
+
+---
+
+## 12. Final Report 规则
+
+当所有 checkpoint 都执行完成，并且用户确认任务结束后，必须生成 final report。
+
+如果用户在最后一个 checkpoint 后明确表示：
+
+```text
+确认生成 final report
+```
+
+或者：
+
+```text
+全部 checkpoint 已验收通过，请生成 final report
+```
+
+必须立即生成 report 文件，不要只在聊天里口头总结。
+
+Final report 文件路径：
+
+```text
+local-docs/ai-tasks/reports/YYYY-MM-DD_task-name.report.md
+```
+
+report 文件名必须和 brief / plan 一一对应。
+
+---
+
+## 13. Final Report 内容要求
+
+Final report 必须包含：
+
+```md
+# Final Report：任务名称
+
+## 1. 文件对应关系
+
+- Brief 文件：
+- Plan 文件：
+- Report 文件：
+
+## 2. 任务目标回顾
+
+简要说明本次任务最初要解决什么问题。
+
+## 3. 最终完成内容
+
+列出最终完成的内容：
+
+-
+-
+
+## 4. Checkpoint 执行记录
+
+### Checkpoint 1：名称
+
+完成情况：
+修改文件：
+用户验收结果：
+
+### Checkpoint 2：名称
+
+完成情况：
+修改文件：
+用户验收结果：
+
+## 5. 最终修改文件汇总
+
+- `文件路径`：修改说明
+- `文件路径`：修改说明
+
+## 6. 验证结果
+
+- 页面是否正常运行：
+- TypeScript / ESLint：
+- H5 适配：
+- 主要交互：
+- 是否影响其他页面：
+
+## 7. 未完成 / 后续建议
+
+如果没有，写：暂无明显遗留问题。
+
+## 8. 是否建议提交代码
+
+说明是否建议用户进行 git diff review 和提交。
+
+例如：建议先检查页面效果和 git diff，确认无误后再提交。
+```
+
+---
+
+## 14. Final Report 生成后
+
+生成 final report 后，在聊天中说明：
+
+```text
+任务已完成，Final Report 已生成：
+
+local-docs/ai-tasks/reports/YYYY-MM-DD_task-name.report.md
+
+建议你检查页面效果和 git diff，确认无误后再提交。
+```
+
+---
+
+## 15. 禁止事项
+
+整个工作流中禁止：
+
+- 未生成 plan 就直接改代码
+- 未确认 plan 就执行 checkpoint
+- checkpoint 执行完后自动继续下一步
+- 不让用户验收就进入下一个 checkpoint
+- 所有 checkpoint 完成后不生成 final report
+- report 只输出在聊天里，不写入 reports 文件夹
+- brief / plan / report 文件名不一致
+- 修改无关文件
+- 引入未确认依赖
+- 删除已有逻辑
+- 假装验证通过
+- 忽略 brief 里的「不要做」
+
+---
+
+## 16. 推荐触发语
+
+### 生成 Plan
+
+```text
+请按照 .cursor/rules/ai-task-workflow.md，基于 local-docs/ai-tasks/briefs/YYYY-MM-DD_task-name.brief.md 生成 plan，不要改代码。
+```
+
+### 执行 Checkpoint
+
+```text
+我确认 plan，请按照 local-docs/ai-tasks/plans/YYYY-MM-DD_task-name.plan.md 执行 Checkpoint 1。完成后停下来，让我验收。
+```
+
+### 继续下一步
+
+```text
+Checkpoint 1 验收通过，继续执行 Checkpoint 2。
+```
+
+### 生成最终报告
+
+```text
+全部 checkpoint 已验收通过，请生成 final report。
+```
+
+---
+
+## 17. 推荐 Cursor Command
+
+可以创建一个 Cursor Command，例如：
+
+```text
+/plan-from-brief
+```
+
+Command 内容：
+
+```md
+请按照 `.cursor/rules/ai-task-workflow.md` 执行。
+
+Brief 文件路径：
+
+$ARGUMENTS
+
+要求：
+1. 先读取 brief。
+2. 再搜索项目相关代码。
+3. 不要改代码。
+4. 生成对应 plan 文件到 `local-docs/ai-tasks/plans/`。
+5. brief 和 plan 文件名必须一一对应。
+6. 在聊天中简要汇报 plan 文件路径。
+7. 等我确认后再执行 checkpoint。
+```
+
+使用示例：
+
+```text
+/plan-from-brief local-docs/ai-tasks/briefs/2026-06-15_game-ui-level-entry.brief.md
+```
+
+---
+
+## 18. 推荐 Brief 模板
+
+每次新建 brief 时，可以使用下面这个极简模板：
+
+```md
+# AI Task Brief：任务名称
+
+## 1. 我想做什么
+
+简单说这次想改什么 / 新增什么。
+
+---
+
+## 2. 现在的问题
+
+现在我觉得不太好的地方：
+
+- 
+- 
+- 
+
+---
+
+## 3. 期望效果
+
+改完之后我希望：
+
+- 
+- 
+- 
+
+---
+
+## 4. 必须保留
+
+这些不要被破坏：
+
+- 
+- 
+- 
+
+---
+
+## 5. 不要做
+
+这次不要做：
+
+- 
+- 
+- 
+
+---
+
+## 6. 参考
+
+可以参考：
+
+- 某个已有页面：
+- 某张截图：
+- 某个组件：
+- 某套风格：
+
+---
+
+## 7. 验收标准
+
+做到下面这些就算完成：
+
+- 
+- 
+- 
+
+---
+
+## 8. 给 Cursor 的要求
+
+请先不要改代码。
+
+请先阅读这个 brief 和项目相关代码，然后输出 implementation plan。
+
+Plan 里需要包含：
+
+1. 你理解的需求
+2. 可能涉及的文件
+3. 具体实现思路
+4. checkpoint 拆分
+5. 风险点
+6. 需要我确认的问题
+
+等我确认 plan 后，再开始执行。
+```
+
+---
+
+## 19. 工作流总结
+
+```text
+1. 用户写 brief
+2. AI 读 brief 和项目代码
+3. AI 生成 plan 文件
+4. 用户确认 plan
+5. AI 执行一个 checkpoint
+6. AI 停下来汇报
+7. 用户验收
+8. 用户确认后继续下一个 checkpoint
+9. 所有 checkpoint 完成
+10. AI 生成 final report 文件
+11. 用户检查效果和 git diff
+12. 用户自行决定是否提交代码
+```
+
+核心原则：
+
+```text
+Brief 是需求输入。
+Plan 是技术落地计划。
+Checkpoint 是分阶段执行单元。
+用户验收是进入下一步的前置条件。
+Final Report 是任务结束记录。
+```
