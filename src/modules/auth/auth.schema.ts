@@ -11,5 +11,10 @@ export const loginSchema = z.object({
   password: z.string().min(1, '密码不能为空'),
 });
 
+export const updateWeeklySettingsSchema = z.object({
+  publicWeeklyReportsEnabled: z.boolean(),
+});
+
 export type RegisterInput = z.infer<typeof registerSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
+export type UpdateWeeklySettingsInput = z.infer<typeof updateWeeklySettingsSchema>;

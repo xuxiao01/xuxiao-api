@@ -8,10 +8,62 @@ datasource db {
 }
 
 model User {
-  id           Int      @id @default(autoincrement())
-  email        String   @unique
-  username     String
-  passwordHash String
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id                         Int                @id @default(autoincrement())
+  email                      String             @unique
+  username                   String
+  passwordHash               String
+  publicWeeklyReportsEnabled Boolean            @default(false) @map("public_weekly_reports_enabled")
+  createdAt                  DateTime           @default(now())
+  updatedAt                  DateTime           @updatedAt
+  weeklyReportWeeks          WeeklyReportWeek[]
+}
+
+model WeeklyReportWeek {
+  id          Int            @id @default(autoincrement())
+  userId      Int            @map("user_id")
+  weekKey     String         @map("week_key")
+  startDate   DateTime       @map("start_date") @db.Date
+  endDate     DateTime       @map("end_date") @db.Date
+  isPublished Boolean        @default(false) @map("is_published")
+  createdAt   DateTime       @default(now()) @map("created_at")
+  updatedAt   DateTime       @updatedAt @map("updated_at")
+  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reports     WeeklyReport[]
+
+  @@unique([userId, weekKey])
+  @@index([userId, startDate(sort: Desc)])
+  @@map("weekly_report_weeks")
+}
+
+model WeeklyReport {
+  id        Int                @id @default(autoincrement())
+  weekId    Int                @map("week_id")
+  sortOrder Int                @map("sort_order")
+  partLabel String             @map("part_label")
+  title     String
+  createdAt DateTime           @default(now()) @map("created_at")
+  updatedAt DateTime           @updatedAt @map("updated_at")
+  week      WeeklyReportWeek   @relation(fields: [weekId], references: [id], onDelete: Cascade)
+  items     WeeklyReportItem[]
+
+  @@unique([weekId, sortOrder])
+  @@index([weekId])
+  @@map("weekly_reports")
+}
+
+model WeeklyReportItem {
+  id          Int          @id @default(autoincrement())
+  reportId    Int          @map("report_id")
+  section     String
+  sortOrder   Int          @map("sort_order")
+  title       String
+  description String       @default("")
+  images      Json         @default("[]")
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+  report      WeeklyReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@unique([reportId, section, sortOrder])
+  @@index([reportId])
+  @@map("weekly_report_items")
 }

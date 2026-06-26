@@ -1,3 +1,4 @@
+import { prisma } from '../../lib/prisma';
 import { AppError } from '../../utils/app-error';
 import { signToken } from '../../utils/jwt';
 import { comparePassword, hashPassword } from '../../utils/password';
@@ -7,7 +8,7 @@ import {
   findById,
   toPublicUser,
 } from '../user/user.service';
-import type { LoginInput, RegisterInput } from './auth.schema';
+import type { LoginInput, RegisterInput, UpdateWeeklySettingsInput } from './auth.schema';
 
 export async function register(input: RegisterInput) {
   const existing = await findByEmail(input.email);
@@ -56,4 +57,20 @@ export async function getMe(userId: number) {
   }
 
   return toPublicUser(user);
+}
+
+export async function updateWeeklySettings(
+  userId: number,
+  input: UpdateWeeklySettingsInput,
+) {
+  const user = await prisma.user.update({
+    where: { id: userId },
+    data: {
+      publicWeeklyReportsEnabled: input.publicWeeklyReportsEnabled,
+    },
+  });
+
+  return {
+    publicWeeklyReportsEnabled: user.publicWeeklyReportsEnabled,
+  };
 }
