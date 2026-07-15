@@ -1,5 +1,5 @@
-import type { User } from '../../generated/client';
-import { prisma } from '../../lib/prisma';
+import type { User } from '../../../generated/client';
+import { prisma } from '../../../lib/prisma';
 import type { PublicUser } from './user.types';
 
 export function toPublicUser(user: User): PublicUser {

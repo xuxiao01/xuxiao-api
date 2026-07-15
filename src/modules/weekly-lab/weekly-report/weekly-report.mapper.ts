@@ -2,8 +2,8 @@ import type {
   WeeklyReport,
   WeeklyReportItem,
   WeeklyReportWeek,
-} from '../../generated/client';
-import { buildWeekDisplayFields } from '../../utils/week-display';
+} from '../../../generated/client';
+import { buildWeekDisplayFields } from './week-display';
 import type {
   ReportListItemDto,
   WeeklyReportDto,

@@ -4,7 +4,7 @@
 
 <h1 align="center">xuxiao-api</h1>
 <p align="center">
-  个人产品矩阵的后端 API 服务，提供用户认证与 Weekly Lab 周报管理能力。
+个人产品矩阵的聚合后端 API 服务，目前提供 Weekly Lab 周报管理与 Crush Date 内容录入能力。
 </p>
 
 ## 项目简介
@@ -13,7 +13,9 @@
 
 当前已实现用户注册登录（JWT）、周报 CRUD、周报公开开关与公开展示等能力。前端提交结构化的周报数据，后端负责存储、鉴权与对外输出。
 
-更完整的接口说明见 [`doc/api.md`](./doc/api.md)。
+Crush Date 当前支持无需登录地新增美食或地点，并通过后端上传图片到 OSS。
+
+更完整的接口说明见 [`doc/weekly-lab/api.md`](./doc/weekly-lab/api.md)。
 
 ## 功能特性
 
@@ -24,6 +26,8 @@
 - 周报公开开关与公开展示接口
 - 基于 zod 的请求参数校验
 - Prisma 管理 PostgreSQL 数据模型与迁移
+- Crush Date 新增美食或地点
+- Crush Date 图片上传到阿里云 OSS
 
 ## 技术栈
 
@@ -43,17 +47,20 @@
 xuxiao-api/
 ├── prisma/                  # Prisma schema 与数据库迁移
 ├── doc/
-│   ├── api.md               # 接口文档（含生产 / 本地环境地址）
-│   └── dev/                 # 设计文档
+│   ├── weekly-lab/          # Weekly Lab 接口与设计文档
+│   └── crush-date/          # Crush Date 接口与设计文档
 ├── src/
 │   ├── config/              # 环境变量配置
 │   ├── lib/                 # Prisma Client 单例
-│   ├── middleware/          # 鉴权、错误处理
+│   ├── middleware/          # 全局错误处理
 │   ├── modules/
-│   │   ├── auth/            # 认证模块
-│   │   ├── user/            # 用户服务
-│   │   └── weekly-report/   # 周报模块
-│   ├── utils/               # JWT、密码、weekKey 等工具
+│   │   ├── index.ts         # 业务模块注册中心
+│   │   ├── crush-date/      # Crush Date 独立业务模块
+│   │   └── weekly-lab/      # Weekly Lab 独立业务模块
+│   │       ├── auth/        # 认证与鉴权
+│   │       ├── user/        # 用户服务
+│   │       └── weekly-report/ # 周报业务
+│   ├── utils/               # 跨模块通用工具
 │   ├── app.ts               # Express 应用
 │   └── main.ts              # 入口文件
 ├── .env.example
@@ -75,8 +82,22 @@ xuxiao-api/
 | PUT | `/api/weekly-reports/:weekKey` | 是 | 新建 / 覆盖保存 |
 | DELETE | `/api/weekly-reports/:weekKey` | 是 | 删除周报 |
 | GET | `/api/public/users/:username/weekly-reports/:weekKey` | 否 | 公开展示 |
+| GET | `/api/crush-date/foods` | 否 | 获取 Crush Date 美食列表 |
+| GET | `/api/crush-date/places` | 否 | 获取 Crush Date 出去玩的地点列表 |
+| POST | `/api/crush-date/content-items` | 否 | 上传图片并新增 Crush Date 美食或地点 |
+| DELETE | `/api/crush-date/content-items/:id` | 否 | 删除 Crush Date 美食或地点 |
+| PATCH | `/api/crush-date/content-items/:id/visited` | 否 | 标记或撤销吃过、去过状态 |
+| GET | `/api/crush-date/plans` | 否 | 获取 Crush Date 计划列表 |
+| POST | `/api/crush-date/plans` | 否 | 新增 Crush Date 本次计划或备用计划 |
+| GET | `/api/crush-date/plans/:id` | 否 | 获取 Crush Date 计划详情 |
+| PATCH | `/api/crush-date/plans/:id` | 否 | 修改 Crush Date 本次计划或备用计划 |
+| DELETE | `/api/crush-date/plans/:id` | 否 | 删除 Crush Date 本次计划或备用计划 |
+| POST | `/api/crush-date/plans/:id/activate` | 否 | 将 Crush Date 备用计划设为本次计划 |
+| POST | `/api/crush-date/plans/:id/complete` | 否 | 完成 Crush Date 本次计划 |
+| POST | `/api/crush-date/plans/:id/replan` | 否 | 将 Crush Date 过去计划再次设为本次计划 |
+| POST | `/api/crush-date/uploads/images` | 否 | 上传 Crush Date 图片到 OSS |
 
-请求 / 响应示例、错误码与测试顺序见 [`doc/api.md`](./doc/api.md)。
+请求 / 响应示例、错误码与测试顺序见 [`doc/weekly-lab/api.md`](./doc/weekly-lab/api.md)。
 
 ## 本地运行
 
@@ -119,6 +140,20 @@ pnpm dev
 
 默认地址：`http://localhost:3000`
 
+只加载 Weekly Lab 模块：
+
+```bash
+pnpm dev:weekly
+```
+
+只加载 Crush Date 模块：
+
+```bash
+pnpm dev:crush-date
+```
+
+`APP_MODULES` 支持以逗号分隔模块名；不配置或设置为 `all` 时加载全部模块。
+
 ### 6. 生产构建与启动
 
 ```bash
@@ -131,6 +166,7 @@ pnpm start
 | 变量 | 说明 | 示例 |
 |------|------|------|
 | `PORT` | 服务端口 | `3000` |
+| `APP_MODULES` | 启用的业务模块，默认全部 | `all` 或 `weekly-lab` |
 | `DATABASE_URL` | PostgreSQL 连接字符串 | `postgresql://postgres:postgres@localhost:5432/xuxiao_api?schema=public` |
 | `JWT_SECRET` | JWT 签名密钥（请使用强随机字符串） | `please_change_me` |
 | `JWT_EXPIRES_IN` | Token 过期时间 | `7d` |
@@ -163,7 +199,7 @@ DATABASE_URL="你的生产库连接串" npx prisma migrate deploy
 
 生产环境建议使用 Nginx 反向代理到 Node.js 服务，并配置 HTTPS。
 
-当前线上环境与接口地址见 [`doc/api.md`](./doc/api.md)。
+当前线上环境与接口地址见 [`doc/weekly-lab/api.md`](./doc/weekly-lab/api.md)。
 
 ## 后续计划
 

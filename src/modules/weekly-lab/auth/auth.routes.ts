@@ -1,5 +1,5 @@
 import { Router, type IRouter } from 'express';
-import { authMiddleware } from '../../middleware/auth.middleware';
+import { authMiddleware } from './auth.middleware';
 import * as authController from './auth.controller';
 
 const router: IRouter = Router();

@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
-import { AppError } from '../../utils/app-error';
-import { fail, success } from '../../utils/response';
+import { AppError } from '../../../utils/app-error';
+import { fail, success } from '../../../utils/response';
 import { loginSchema, registerSchema, updateWeeklySettingsSchema } from './auth.schema';
 import * as authService from './auth.service';
 

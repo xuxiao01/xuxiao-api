@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
-import { AppError } from '../../utils/app-error';
-import { success } from '../../utils/response';
+import { AppError } from '../../../utils/app-error';
+import { success } from '../../../utils/response';
 import { putWeeklyReportSchema } from './weekly-report.schema';
 import * as weeklyReportService from './weekly-report.service';
 

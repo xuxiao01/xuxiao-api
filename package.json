@@ -5,6 +5,8 @@
   "main": "dist/main.js",
   "scripts": {
     "dev": "tsx watch src/main.ts",
+    "dev:crush-date": "APP_MODULES=crush-date tsx watch src/main.ts",
+    "dev:weekly": "APP_MODULES=weekly-lab tsx watch src/main.ts",
     "build": "tsc",
     "start": "node dist/main.js",
     "prisma:generate": "prisma generate",
@@ -15,24 +17,33 @@
   "author": "",
   "license": "ISC",
   "pnpm": {
-    "onlyBuiltDependencies": ["bcrypt", "prisma", "@prisma/engines", "esbuild"]
+    "onlyBuiltDependencies": [
+      "bcrypt",
+      "prisma",
+      "@prisma/engines",
+      "esbuild"
+    ]
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.8.0",
     "@prisma/client": "^7.8.0",
+    "ali-oss": "^6.23.0",
     "bcrypt": "^6.0.0",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "jsonwebtoken": "^9.0.3",
+    "multer": "^2.2.0",
     "pg": "^8.22.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@types/ali-oss": "^6.23.3",
     "@types/bcrypt": "^6.0.0",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/jsonwebtoken": "^9.0.10",
+    "@types/multer": "^2.2.0",
     "@types/node": "^26.0.0",
     "@types/pg": "^8.20.0",
     "prisma": "^7.8.0",

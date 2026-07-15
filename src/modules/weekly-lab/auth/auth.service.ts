@@ -1,7 +1,7 @@
-import { prisma } from '../../lib/prisma';
-import { AppError } from '../../utils/app-error';
-import { signToken } from '../../utils/jwt';
-import { comparePassword, hashPassword } from '../../utils/password';
+import { prisma } from '../../../lib/prisma';
+import { AppError } from '../../../utils/app-error';
+import { signToken } from './jwt';
+import { comparePassword, hashPassword } from './password';
 import {
   createUser,
   findByEmail,

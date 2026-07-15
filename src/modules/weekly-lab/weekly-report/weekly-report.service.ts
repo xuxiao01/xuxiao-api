@@ -1,6 +1,6 @@
-import { prisma } from '../../lib/prisma';
-import { AppError } from '../../utils/app-error';
-import { isValidWeekKey } from '../../utils/week-key';
+import { prisma } from '../../../lib/prisma';
+import { AppError } from '../../../utils/app-error';
+import { isValidWeekKey } from './week-key';
 import {
   toWeekListItem,
   toWeekResponse,

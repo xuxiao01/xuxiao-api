@@ -7,6 +7,32 @@ datasource db {
   provider = "postgresql"
 }
 
+enum CrushDateContentType {
+  FOOD  @map("food")
+  PLACE @map("place")
+}
+
+enum CrushDatePlanStatus {
+  ACTIVE    @map("active")
+  BACKUP    @map("backup")
+  COMPLETED @map("completed")
+}
+
+enum CrushDatePlanScenario {
+  HOT   @map("hot")
+  COLD  @map("cold")
+  RAINY @map("rainy")
+  SUNNY @map("sunny")
+  FREE  @map("free")
+}
+
+enum CrushDatePlanPeriod {
+  MORNING   @map("morning")
+  NOON      @map("noon")
+  AFTERNOON @map("afternoon")
+  EVENING   @map("evening")
+}
+
 model User {
   id                         Int                @id @default(autoincrement())
   email                      String             @unique
@@ -66,4 +92,59 @@ model WeeklyReportItem {
   @@unique([reportId, section, sortOrder])
   @@index([reportId])
   @@map("weekly_report_items")
+}
+
+model CrushDateContentItem {
+  id          String               @id
+  contentType CrushDateContentType @map("content_type")
+  name        String
+  type        String
+  comment     String
+  image       String
+  visited     Boolean              @default(false)
+  visitedAt   DateTime?            @map("visited_at")
+  createdAt   DateTime             @default(now()) @map("created_at")
+  updatedAt   DateTime             @updatedAt @map("updated_at")
+
+  @@index([contentType, createdAt(sort: Desc)])
+  @@map("crush_date_content_items")
+}
+
+model CrushDatePlan {
+  id               String                @id
+  title            String
+  status           CrushDatePlanStatus
+  date             DateTime?             @db.Date
+  scenario         CrushDatePlanScenario
+  scenarioText     String                @map("scenario_text")
+  note             String
+  sourceBackupId   String?               @map("source_backup_id")
+  completedAt      DateTime?             @map("completed_at")
+  createdAt        DateTime              @default(now()) @map("created_at")
+  updatedAt        DateTime              @updatedAt @map("updated_at")
+  sourceBackup     CrushDatePlan?        @relation("CrushDateBackupActivations", fields: [sourceBackupId], references: [id], onDelete: SetNull)
+  activatedPlans   CrushDatePlan[]       @relation("CrushDateBackupActivations")
+  items            CrushDatePlanItem[]
+
+  @@index([status, createdAt(sort: Desc)])
+  @@index([completedAt(sort: Desc)])
+  @@index([sourceBackupId])
+  @@map("crush_date_plans")
+}
+
+model CrushDatePlanItem {
+  id        String               @id
+  planId    String               @map("plan_id")
+  type      CrushDateContentType
+  sourceId  String               @map("source_id")
+  title     String
+  image     String
+  period    CrushDatePlanPeriod
+  note      String
+  order     Int                  @map("sort_order")
+  plan      CrushDatePlan        @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@unique([planId, sourceId])
+  @@index([planId, period, order])
+  @@map("crush_date_plan_items")
 }
