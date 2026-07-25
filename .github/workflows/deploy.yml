@@ -140,7 +140,7 @@ jobs:
 
           pnpm --version
           pnpm config get registry
-          pnpm install --frozen-lockfile --config.registry=https://registry.npmmirror.com/ --config.confirmModulesPurge=false
+          pnpm install --frozen-lockfile --force --config.registry=https://registry.npmmirror.com/ --config.confirmModulesPurge=false
           pnpm prisma:generate
           pnpm exec prisma migrate deploy
 
