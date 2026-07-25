@@ -8,6 +8,7 @@
     "dev:crush-date": "APP_MODULES=crush-date tsx watch src/main.ts",
     "dev:weekly": "APP_MODULES=weekly-lab tsx watch src/main.ts",
     "build": "tsc",
+    "test": "vitest run src",
     "start": "node dist/main.js",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
@@ -48,6 +49,7 @@
     "@types/pg": "^8.20.0",
     "prisma": "^7.8.0",
     "tsx": "^4.22.4",
-    "typescript": "5.8.3"
+    "typescript": "5.8.3",
+    "vitest": "^4.1.10"
   }
 }

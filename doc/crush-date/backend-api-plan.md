@@ -220,6 +220,31 @@ Content-Type: application/json
 同一计划中 `sourceId` 不能重复。后端按每个 `period` 内的 `order` 排序，并在写入后将顺序
 整理为从 `0` 开始的连续数字。
 
+过去计划精选照片使用独立数据表，不放入计划列表和计划详情响应：
+
+```prisma
+model CrushDatePlanPhoto {
+  id        String        @id
+  planId    String        @map("plan_id")
+  objectKey String        @unique @map("object_key")
+  sortOrder Int           @map("sort_order")
+  createdAt DateTime      @default(now()) @map("created_at")
+
+  plan      CrushDatePlan @relation(
+    fields: [planId],
+    references: [id],
+    onDelete: Cascade
+  )
+
+  @@index([planId, sortOrder, createdAt])
+  @@map("crush_date_plan_photos")
+}
+```
+
+`CrushDatePlan` 通过 `photos CrushDatePlanPhoto[]` 建立关联。删除计划时数据库级联删除照片
+记录；数据库只保存 OSS `objectKey`，公开 URL 在响应时动态生成。`sortOrder` 为手动排序
+字段。
+
 ## 7. 新增计划
 
 ```http
@@ -344,36 +369,53 @@ Content-Type: application/json
 DELETE /api/crush-date/plans/{id}
 ```
 
-只允许删除本次计划或备用计划。删除成功返回 `204 No Content`；计划不存在返回
-`404 Not Found`；过去的计划不能删除，返回 `409 Conflict`。
+允许删除本次计划、备用计划或过去的计划。删除前读取计划精选照片的 `objectKey`，在数据库
+事务中删除计划；安排项和精选照片记录通过外键级联删除。数据库成功后清理 OSS 中对应的精选
+照片，清理失败只记录日志，不让计划删除失败。删除成功返回 `204 No Content`；计划不存在
+返回 `404 Not Found`。不得删除美食、地点或安排快照引用的原始图片。
 
-## 12. 备用计划设为本次计划
+## 12. 更新计划状态
 
 ```http
-POST /api/crush-date/plans/{id}/activate
+PATCH /api/crush-date/plans/{id}/status
 Content-Type: application/json
 ```
 
+备用计划设为本次计划：
+
 ```json
 {
-  "date": "2026-07-19"
+  "status": "active",
+  "date": "2026-07-26"
 }
 ```
 
-源计划必须是备用计划，并且系统中不能已有本次计划。接口创建一份新的本次计划，保留原备用
-计划；新计划和安排项使用新的 ID，`sourceBackupId` 记录源备用计划 ID。成功返回新计划和
-`201 Created`。
+完成本次计划：
 
-## 13. 完成本次计划
-
-```http
-POST /api/crush-date/plans/{id}/complete
+```json
+{
+  "status": "completed"
+}
 ```
 
-源计划必须是本次计划。后端将其 `status` 改为 `completed`，并按服务器时间写入
-`completedAt`。成功返回完整计划和 `200 OK`。前端完成后只需刷新计划列表。
+本次计划放回备用计划：
 
-## 14. 过去计划再计划一次
+```json
+{
+  "status": "backup"
+}
+```
+
+只允许 `backup → active`、`active → backup` 和 `active → completed`。激活时 `date`
+必填，后端将 `sourceBackupId` 设为 `null`；放回备用时不能提交 `date`，后端将 `date`、
+`completedAt` 和 `sourceBackupId` 设为 `null`；完成时由服务器写入 `completedAt`。所有
+流转均直接更新原计划，计划 ID、安排项 ID、内容和创建时间保持不变，成功返回完整计划和
+`200 OK`。计划不存在返回 `404`，状态不允许或已有本次计划返回 `409`，请求字段不合法返回
+`400`。
+
+原 `POST /plans/{id}/activate` 和 `POST /plans/{id}/complete` 路由删除。
+
+## 13. 过去计划再计划一次
 
 ```http
 POST /api/crush-date/plans/{id}/replan
@@ -389,7 +431,82 @@ Content-Type: application/json
 源计划必须是过去的计划，并且系统中不能已有本次计划。接口创建一份新的本次计划，保留原过去
 计划；新计划和安排项使用新的 ID。成功返回新计划和 `201 Created`。
 
-## 15. 业务约束与状态码
+## 14. 上传过去计划精选照片
+
+```http
+POST /api/crush-date/plans/{planId}/photos
+Content-Type: multipart/form-data
+```
+
+表单字段为 `file`，每次上传一张。仅过去的计划允许上传，支持 JPG、PNG、WebP，单张最大
+5MB，每个计划最多 9 张。后端生成照片 ID，并按以下路径上传：
+
+```text
+crush-date/plan-photos/{planId}/{photoId}.{ext}
+```
+
+数据库只保存 `objectKey`，响应时动态生成 OSS URL。照片自动追加连续 `sortOrder`。数据库
+写入失败时必须清理刚上传的 OSS 文件。成功返回照片 ID、URL、顺序、创建时间和
+`201 Created`。
+
+## 15. 查询过去计划精选照片
+
+```http
+GET /api/crush-date/plans/{planId}/photos
+```
+
+仅过去的计划允许查询。照片不加入计划列表或详情响应，由过去计划详情页单独请求。返回顺序为：
+
+```text
+sortOrder ASC, createdAt ASC, id ASC
+```
+
+成功返回 `{ "list": [...] }` 和 `200 OK`。
+
+## 16. 调整过去计划精选照片顺序
+
+```http
+PATCH /api/crush-date/plans/{planId}/photos/order
+Content-Type: application/json
+```
+
+```json
+{
+  "photoIds": ["photo-3", "photo-1", "photo-2"]
+}
+```
+
+`photoIds` 必须无重复并完整包含该计划当前的全部照片，不允许缺少、增加或混入其他计划的照片
+ID。后端在事务中按数组顺序重新写入从 `0` 开始的连续 `sortOrder`，成功返回排序后的完整照片
+列表和 `200 OK`。
+
+## 17. 删除单张过去计划精选照片
+
+```http
+DELETE /api/crush-date/plans/{planId}/photos/{photoId}
+```
+
+仅过去的计划允许删除精选照片。事务内锁定所属计划，校验照片属于该计划，删除照片记录，并将
+剩余照片按照 `sortOrder ASC, createdAt ASC, id ASC` 的当前顺序重新写入从 `0` 开始的连续
+`sortOrder`。
+
+数据库删除成功后清理该照片对应的 OSS 文件。OSS 清理失败只记录日志，不将已经成功的数据库
+删除改成失败。成功返回 `204 No Content`；计划或照片不存在、照片不属于该计划返回
+`404 Not Found`；计划不是过去计划返回 `409 Conflict`。
+
+删除整个计划时仍然级联删除该计划全部照片记录，并在数据库成功后清理全部对应 OSS 文件。
+
+前端接入约定：
+
+- 仅在 `completedPlans` 的详情页展示精选照片入口。
+- 进入详情页后单独调用照片查询接口，不从计划列表或计划详情对象读取照片。
+- 多选图片后逐张调用上传接口；上传成功后刷新照片列表。
+- 排序时必须提交当前计划全部照片 ID，数组顺序就是最终展示顺序。
+- 删除单张照片后重新查询照片列表，以后端重排后的 `sortOrder` 为准。
+- `active`、`backup`、`completed` 三类计划均可调用现有计划删除接口；删除
+  `completed` 计划前应提示精选照片也会被永久删除。
+
+## 18. 业务约束与状态码
 
 在当前没有登录和用户体系的阶段，整个 Crush Date 数据集最多只能有一条 `active` 计划。
 后端必须通过数据库唯一约束或事务锁保证该规则，不能只依赖前端判断。以后增加用户或情侣关系后，
@@ -397,19 +514,19 @@ Content-Type: application/json
 
 | 状态码 | 使用场景 |
 | ------ | -------- |
-| `200 OK` | 查询、修改、完成成功 |
-| `201 Created` | 新增计划、激活备用计划、再次计划成功 |
+| `200 OK` | 查询、修改、计划状态流转成功 |
+| `201 Created` | 新增计划、再次计划、上传精选照片成功 |
 | `204 No Content` | 删除成功 |
 | `400 Bad Request` | 字段、日期、枚举值或安排数据不合法 |
 | `404 Not Found` | 计划或引用的美食、地点不存在 |
-| `409 Conflict` | 已有本次计划、计划状态不允许当前操作或修改只读的过去计划 |
+| `409 Conflict` | 已有本次计划、计划状态不允许当前操作、修改只读的过去计划、非过去计划管理照片或照片达到 9 张 |
 
-所有会同时写入计划和安排项的操作必须使用数据库事务。激活、完成、再次计划等状态转换接口
-需要校验源状态；同一个请求因重复提交造成状态不满足时返回 `409 Conflict`。
+所有会同时写入计划和安排项的操作必须使用数据库事务。更新计划状态和再次计划接口需要校验
+源状态；同一个请求因重复提交造成状态不满足时返回 `409 Conflict`。
 
 ## 暂时不写的内容
 
 - OSS 签名上传接口。
 - 登录和用户体系。
-- 照片、回忆和分享接口；前端可暂时将 `memoryPhotos` 视为空数组。
+- 回忆文字和分享接口。
 - 跨服务的分布式事务方案。

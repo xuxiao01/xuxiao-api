@@ -1,0 +1,105 @@
+name: Deploy xuxiao-api
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-xuxiao-api-production
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: '22'
+  DEPLOY_PATH: /www/wwwroot/xuxiao-api
+  PM2_APP_NAME: xuxiao-api
+  HEALTHCHECK_URL: http://127.0.0.1:3000/api/health
+
+jobs:
+  build:
+    name: Build and type-check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm prisma:generate
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/xuxiao_api?schema=public
+
+      - name: Build
+        run: pnpm build
+
+  deploy:
+    name: Deploy to Tencent Cloud server
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Configure SSH
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "${{ secrets.TENCENT_SERVER_SSH_KEY }}" > ~/.ssh/tencent_server_key
+          chmod 600 ~/.ssh/tencent_server_key
+          ssh-keyscan -p "${{ secrets.TENCENT_SERVER_PORT }}" "${{ secrets.TENCENT_SERVER_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Deploy application
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/tencent_server_key \
+            -p "${{ secrets.TENCENT_SERVER_PORT }}" \
+            "${{ secrets.TENCENT_SERVER_USER }}@${{ secrets.TENCENT_SERVER_HOST }}" \
+            "DEPLOY_PATH='${DEPLOY_PATH}' PM2_APP_NAME='${PM2_APP_NAME}' HEALTHCHECK_URL='${HEALTHCHECK_URL}' bash -s" <<'EOF'
+          set -euo pipefail
+
+          cd "$DEPLOY_PATH"
+
+          if [ ! -f .env ]; then
+            echo "Missing production .env in $DEPLOY_PATH" >&2
+            exit 1
+          fi
+
+          git fetch origin main
+          git checkout main
+          git pull --ff-only origin main
+
+          if command -v corepack >/dev/null 2>&1; then
+            corepack enable
+          fi
+
+          pnpm install --frozen-lockfile
+          pnpm prisma:generate
+          pnpm exec prisma migrate deploy
+
+          rm -rf dist
+          pnpm build
+
+          if pm2 describe "$PM2_APP_NAME" >/dev/null 2>&1; then
+            pm2 restart "$PM2_APP_NAME" --update-env
+          else
+            pm2 start dist/main.js --name "$PM2_APP_NAME" --update-env
+          fi
+
+          pm2 save
+          curl -fsS "$HEALTHCHECK_URL"
+          EOF
+

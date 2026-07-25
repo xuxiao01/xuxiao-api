@@ -9,9 +9,9 @@ import {
 } from '../../../generated/client';
 import { prisma } from '../../../lib/prisma';
 import { AppError } from '../../../utils/app-error';
+import * as uploadService from '../upload/upload.service';
 import { toPlanResponse } from './plan.mapper';
 import type {
-  ActivatePlanInput,
   CreatePlanInput,
   CreatePlanItemInput,
   PlanItemType,
@@ -22,6 +22,7 @@ import type {
   PlanScenario,
   UpdatePlanInput,
   UpdatePlanItemInput,
+  UpdatePlanStatusInput,
 } from './plan.types';
 
 const databaseContentTypes: Record<PlanItemType, CrushDateContentType> = {
@@ -310,34 +311,51 @@ export async function update(
 }
 
 export async function remove(id: string): Promise<void> {
-  const plan = await prisma.crushDatePlan.findUnique({
-    where: { id },
-    select: { status: true },
-  });
-  if (!plan) {
-    throw new AppError(404, '计划不存在');
-  }
-  if (plan.status === CrushDatePlanStatus.COMPLETED) {
-    throw new AppError(409, '过去的计划不能删除');
-  }
+  const photoObjectKeys = await prisma.$transaction(async (transaction) => {
+    const plan = await transaction.crushDatePlan.findUnique({
+      where: { id },
+      select: {
+        photos: {
+          select: { objectKey: true },
+        },
+      },
+    });
+    if (!plan) {
+      throw new AppError(404, '计划不存在');
+    }
 
-  const result = await prisma.crushDatePlan.deleteMany({
-    where: { id },
+    const result = await transaction.crushDatePlan.deleteMany({
+      where: { id },
+    });
+    if (result.count === 0) {
+      throw new AppError(404, '计划不存在');
+    }
+
+    return plan.photos.map((photo) => photo.objectKey);
   });
-  if (result.count === 0) {
-    throw new AppError(404, '计划不存在');
-  }
+
+  const cleanupResults = await Promise.allSettled(
+    photoObjectKeys.map((objectKey) => uploadService.deleteImage(objectKey)),
+  );
+  cleanupResults.forEach((result, index) => {
+    if (result.status === 'rejected') {
+      console.error(
+        `Failed to delete plan photo ${photoObjectKeys[index]}:`,
+        result.reason,
+      );
+    }
+  });
 }
 
-export async function activate(
+async function activate(
   id: string,
-  input: ActivatePlanInput,
+  date: string,
 ): Promise<PlanResponse> {
   try {
     const plan = await prisma.$transaction(async (transaction) => {
       const sourcePlan = await transaction.crushDatePlan.findUnique({
         where: { id },
-        include: { items: true },
+        select: { status: true },
       });
       if (!sourcePlan) {
         throw new AppError(404, '计划不存在');
@@ -354,33 +372,38 @@ export async function activate(
         throw new AppError(409, '系统中已存在本次计划');
       }
 
-      return transaction.crushDatePlan.create({
-        data: {
-          id: `plan-${randomUUID()}`,
-          title: sourcePlan.title,
-          status: CrushDatePlanStatus.ACTIVE,
-          date: new Date(`${input.date}T00:00:00.000Z`),
-          scenario: sourcePlan.scenario,
-          scenarioText: sourcePlan.scenarioText,
-          note: sourcePlan.note,
-          sourceBackup: {
-            connect: { id: sourcePlan.id },
-          },
-          items: {
-            create: sourcePlan.items.map((item) => ({
-              id: `plan-item-${randomUUID()}`,
-              type: item.type,
-              sourceId: item.sourceId,
-              title: item.title,
-              image: item.image,
-              period: item.period,
-              note: item.note,
-              order: item.order,
-            })),
-          },
+      const result = await transaction.crushDatePlan.updateMany({
+        where: {
+          id,
+          status: CrushDatePlanStatus.BACKUP,
         },
+        data: {
+          status: CrushDatePlanStatus.ACTIVE,
+          date: new Date(`${date}T00:00:00.000Z`),
+          sourceBackupId: null,
+          completedAt: null,
+        },
+      });
+
+      if (result.count === 0) {
+        const currentPlan = await transaction.crushDatePlan.findUnique({
+          where: { id },
+          select: { status: true },
+        });
+        if (!currentPlan) {
+          throw new AppError(404, '计划不存在');
+        }
+        throw new AppError(409, '只有备用计划可以设为本次计划');
+      }
+
+      const activatedPlan = await transaction.crushDatePlan.findUnique({
+        where: { id },
         include: { items: true },
       });
+      if (!activatedPlan) {
+        throw new AppError(404, '计划不存在');
+      }
+      return activatedPlan;
     });
 
     return toPlanResponse(plan);
@@ -395,7 +418,7 @@ export async function activate(
   }
 }
 
-export async function complete(id: string): Promise<PlanResponse> {
+async function complete(id: string): Promise<PlanResponse> {
   const plan = await prisma.$transaction(async (transaction) => {
     const result = await transaction.crushDatePlan.updateMany({
       where: {
@@ -430,6 +453,59 @@ export async function complete(id: string): Promise<PlanResponse> {
   });
 
   return toPlanResponse(plan);
+}
+
+async function moveToBackup(id: string): Promise<PlanResponse> {
+  const plan = await prisma.$transaction(async (transaction) => {
+    const result = await transaction.crushDatePlan.updateMany({
+      where: {
+        id,
+        status: CrushDatePlanStatus.ACTIVE,
+      },
+      data: {
+        status: CrushDatePlanStatus.BACKUP,
+        date: null,
+        completedAt: null,
+        sourceBackupId: null,
+      },
+    });
+
+    if (result.count === 0) {
+      const existingPlan = await transaction.crushDatePlan.findUnique({
+        where: { id },
+        select: { id: true },
+      });
+      if (!existingPlan) {
+        throw new AppError(404, '计划不存在');
+      }
+      throw new AppError(409, '只有本次计划可以放回备用计划');
+    }
+
+    const backupPlan = await transaction.crushDatePlan.findUnique({
+      where: { id },
+      include: { items: true },
+    });
+    if (!backupPlan) {
+      throw new AppError(404, '计划不存在');
+    }
+    return backupPlan;
+  });
+
+  return toPlanResponse(plan);
+}
+
+export async function updateStatus(
+  id: string,
+  input: UpdatePlanStatusInput,
+): Promise<PlanResponse> {
+  if (input.status === 'active') {
+    return activate(id, input.date);
+  }
+  if (input.status === 'backup') {
+    return moveToBackup(id);
+  }
+
+  return complete(id);
 }
 
 export async function replan(

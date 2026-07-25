@@ -6,6 +6,12 @@ export interface UploadImageInput {
   mimeType: string;
 }
 
+export interface UploadImageAtPathInput {
+  objectKeyWithoutExtension: string;
+  buffer: Buffer;
+  mimeType: string;
+}
+
 export interface UploadImageResponse {
   url: string;
   objectKey: string;

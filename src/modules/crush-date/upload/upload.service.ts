@@ -2,7 +2,11 @@ import { randomUUID } from 'node:crypto';
 import { AppError } from '../../../utils/app-error';
 import { crushDateConfig } from '../crush-date.config';
 import { ossClient } from '../oss/oss.client';
-import type { UploadImageInput, UploadImageResponse } from './upload.types';
+import type {
+  UploadImageAtPathInput,
+  UploadImageInput,
+  UploadImageResponse,
+} from './upload.types';
 import { detectImageMimeType } from './upload.validation';
 
 const imageExtensions: Record<string, string> = {
@@ -11,17 +15,16 @@ const imageExtensions: Record<string, string> = {
   'image/webp': 'webp',
 };
 
-function buildObjectKey(input: UploadImageInput): string {
+function buildObjectKeyWithoutExtension(input: UploadImageInput): string {
   const now = new Date();
   const year = now.getUTCFullYear();
   const month = String(now.getUTCMonth() + 1).padStart(2, '0');
   const directory = input.contentType === 'food' ? 'foods' : 'places';
-  const extension = imageExtensions[input.mimeType];
 
-  return `crush-date/${directory}/${year}/${month}/${randomUUID()}.${extension}`;
+  return `crush-date/${directory}/${year}/${month}/${randomUUID()}`;
 }
 
-function buildPublicUrl(objectKey: string): string {
+export function buildPublicUrl(objectKey: string): string {
   const baseUrl = crushDateConfig.OSS_PUBLIC_BASE_URL.replace(/\/$/, '');
   const encodedKey = objectKey
     .split('/')
@@ -31,18 +34,16 @@ function buildPublicUrl(objectKey: string): string {
   return `${baseUrl}/${encodedKey}`;
 }
 
-export async function uploadImage(
-  input: UploadImageInput,
+export async function uploadImageAtPath(
+  input: UploadImageAtPathInput,
 ): Promise<UploadImageResponse> {
   const detectedMimeType = detectImageMimeType(input.buffer);
   if (!detectedMimeType || detectedMimeType !== input.mimeType) {
     throw new AppError(400, '图片文件内容与格式不匹配');
   }
 
-  const objectKey = buildObjectKey({
-    ...input,
-    mimeType: detectedMimeType,
-  });
+  const extension = imageExtensions[detectedMimeType];
+  const objectKey = `${input.objectKeyWithoutExtension}.${extension}`;
 
   await ossClient.put(objectKey, input.buffer, {
     headers: {
@@ -55,6 +56,16 @@ export async function uploadImage(
     url: buildPublicUrl(objectKey),
     objectKey,
   };
+}
+
+export async function uploadImage(
+  input: UploadImageInput,
+): Promise<UploadImageResponse> {
+  return uploadImageAtPath({
+    objectKeyWithoutExtension: buildObjectKeyWithoutExtension(input),
+    buffer: input.buffer,
+    mimeType: input.mimeType,
+  });
 }
 
 export async function deleteImage(objectKey: string): Promise<void> {

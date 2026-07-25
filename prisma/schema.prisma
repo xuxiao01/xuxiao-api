@@ -125,6 +125,7 @@ model CrushDatePlan {
   sourceBackup     CrushDatePlan?        @relation("CrushDateBackupActivations", fields: [sourceBackupId], references: [id], onDelete: SetNull)
   activatedPlans   CrushDatePlan[]       @relation("CrushDateBackupActivations")
   items            CrushDatePlanItem[]
+  photos           CrushDatePlanPhoto[]
 
   @@index([status, createdAt(sort: Desc)])
   @@index([completedAt(sort: Desc)])
@@ -147,4 +148,16 @@ model CrushDatePlanItem {
   @@unique([planId, sourceId])
   @@index([planId, period, order])
   @@map("crush_date_plan_items")
+}
+
+model CrushDatePlanPhoto {
+  id        String        @id
+  planId    String        @map("plan_id")
+  objectKey String        @unique @map("object_key")
+  sortOrder Int           @map("sort_order")
+  createdAt DateTime      @default(now()) @map("created_at")
+  plan      CrushDatePlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@index([planId, sortOrder, createdAt])
+  @@map("crush_date_plan_photos")
 }

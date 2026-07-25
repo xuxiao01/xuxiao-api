@@ -130,8 +130,9 @@ export const updatePlanSchema = z
     });
   });
 
-export const activatePlanSchema = z
+const activatePlanStatusSchema = z
   .object({
+    status: z.literal('active'),
     date: planDateSchema,
   })
   .strict()
@@ -145,4 +146,35 @@ export const activatePlanSchema = z
     }
   });
 
-export const replanPlanSchema = activatePlanSchema;
+const completePlanStatusSchema = z
+  .object({
+    status: z.literal('completed'),
+  })
+  .strict();
+
+const backupPlanStatusSchema = z
+  .object({
+    status: z.literal('backup'),
+  })
+  .strict();
+
+export const updatePlanStatusSchema = z.union([
+  activatePlanStatusSchema,
+  completePlanStatusSchema,
+  backupPlanStatusSchema,
+]);
+
+export const replanPlanSchema = z
+  .object({
+    date: planDateSchema,
+  })
+  .strict()
+  .superRefine((input, context) => {
+    if (input.date < getShanghaiDate()) {
+      context.addIssue({
+        code: 'custom',
+        path: ['date'],
+        message: 'date 不能早于当前日期',
+      });
+    }
+  });

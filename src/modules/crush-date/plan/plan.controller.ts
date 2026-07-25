@@ -1,9 +1,9 @@
 import type { NextFunction, Request, Response } from 'express';
 import {
-  activatePlanSchema,
   createPlanSchema,
   planParamsSchema,
   replanPlanSchema,
+  updatePlanStatusSchema,
   updatePlanSchema,
 } from './plan.schema';
 import * as planService from './plan.service';
@@ -58,21 +58,15 @@ export async function remove(req: Request, res: Response, next: NextFunction) {
   }
 }
 
-export async function activate(req: Request, res: Response, next: NextFunction) {
+export async function updateStatus(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
   try {
     const { id } = planParamsSchema.parse(req.params);
-    const input = activatePlanSchema.parse(req.body);
-    const plan = await planService.activate(id, input);
-    return res.status(201).json(plan);
-  } catch (error) {
-    next(error);
-  }
-}
-
-export async function complete(req: Request, res: Response, next: NextFunction) {
-  try {
-    const { id } = planParamsSchema.parse(req.params);
-    const plan = await planService.complete(id);
+    const input = updatePlanStatusSchema.parse(req.body);
+    const plan = await planService.updateStatus(id, input);
     return res.json(plan);
   } catch (error) {
     next(error);

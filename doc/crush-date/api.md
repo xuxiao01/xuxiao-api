@@ -342,71 +342,74 @@ Content-Type: application/json
 DELETE /api/crush-date/plans/{id}
 ```
 
-只允许删除 `active` 或 `backup` 计划，关联的安排项会一起删除。
+允许删除 `active`、`backup` 或 `completed` 计划。关联的安排项和精选照片数据库记录会通过外键级联删除。
 
 - 删除成功：`204 No Content`，无响应体。
 - 计划不存在：`404 Not Found`。
-- `completed` 计划不能删除：`409 Conflict`。
 
-```json
-{
-  "success": false,
-  "message": "过去的计划不能删除"
-}
-```
+数据库删除成功后，后端会清理该计划精选照片对应的 OSS 文件。OSS 清理失败只记录日志，不会将已经成功的计划删除改成失败。
 
-删除计划不会删除美食、地点或 OSS 图片，因为计划安排保存的是内容快照，原始内容仍可能被其他计划使用。
+删除计划不会删除美食、地点、安排快照引用的原始图片或其他计划的图片。
 
-## 备用计划设为本次计划
+## 更新计划状态
 
 ```http
-POST /api/crush-date/plans/{id}/activate
+PATCH /api/crush-date/plans/{id}/status
 Content-Type: application/json
 ```
 
+备用计划设为本次计划：
+
 ```json
 {
-  "date": "2026-07-19"
+  "status": "active",
+  "date": "2026-07-26"
 }
 ```
 
-`date` 必须是有效的 `YYYY-MM-DD`，且不能早于上海时区的当前日期。源计划必须是 `backup`，系统中不能已有 `active` 计划。
+完成本次计划：
 
-接口会保留原备用计划，复制生成一条新的本次计划：
-
-- 新计划及全部安排项使用新的 ID。
-- 新计划的 `sourceBackupId` 指向原备用计划 ID。
-- 标题、场景、备注和安排快照从备用计划复制。
-- 创建成功返回 `201 Created` 和完整的新计划。
-
-源计划不是备用计划，或系统中已有本次计划时返回 `409 Conflict`。
-
-## 完成本次计划
-
-```http
-POST /api/crush-date/plans/{id}/complete
+```json
+{
+  "status": "completed"
+}
 ```
 
-该接口不需要请求体。源计划必须是当前唯一的 `active` 计划。
+本次计划放回备用计划：
 
-后端会将该计划原地更新为过去计划：
+```json
+{
+  "status": "backup"
+}
+```
 
-- `status` 更新为 `completed`。
-- `completedAt` 使用服务器当前时间。
-- 计划 ID 和安排项 ID 保持不变。
+接口仅允许以下状态流转：
+
+```text
+backup → active
+active → backup
+active → completed
+```
+
+从 `backup` 更新为 `active` 时，`date` 必填，必须是有效的 `YYYY-MM-DD`，且不能早于上海时区的当前日期；系统中不能已有其他 `active` 计划。
+从 `active` 更新为 `backup` 时不能提交 `date`，后端会将原计划日期清空。
+
+状态流转会直接更新原计划：
+
+- 计划 ID、安排项 ID、标题、场景、备注、安排快照和创建时间保持不变。
+- 激活时将 `sourceBackupId` 设为 `null`，不会额外保留内容相同的备用计划。
+- 放回备用计划时将 `date`、`completedAt` 和 `sourceBackupId` 设为 `null`。
+- 完成时由服务器写入 `completedAt`。
 - 成功返回 `200 OK` 和更新后的完整计划。
 
-计划不存在返回 `404 Not Found`。重复完成同一计划，或者源计划不是本次计划时返回：
+计划不存在返回 `404 Not Found`；不允许的源状态、重复提交或系统中已有本次计划时返回
+`409 Conflict`。请求字段不符合对应目标状态的要求时返回 `400 Bad Request`。
+
+以下旧接口已移除，前端和 Apifox 中不再使用：
 
 ```http
-409 Conflict
-```
-
-```json
-{
-  "success": false,
-  "message": "只有本次计划可以完成"
-}
+POST /api/crush-date/plans/{id}/activate
+POST /api/crush-date/plans/{id}/complete
 ```
 
 ## 过去计划再计划一次
@@ -432,6 +435,152 @@ Content-Type: application/json
 - 创建成功返回 `201 Created` 和完整的新计划。
 
 源计划不是过去计划，或者系统中已有本次计划时返回 `409 Conflict`。
+
+## 上传过去计划精选照片
+
+```http
+POST /api/crush-date/plans/{planId}/photos
+Content-Type: multipart/form-data
+```
+
+仅 `completed` 计划允许上传。Apifox 的 Body 选择 `form-data`，添加名称为 `file` 的字段，
+字段类型选择文件并选中一张图片。
+
+- 支持 JPG、PNG、WebP。
+- 单张最大 5MB。
+- 每次请求上传一张，前端多选时逐张调用。
+- 每个计划最多 9 张。
+- 后端自动追加连续的 `sortOrder`。
+
+OSS 对象路径为：
+
+```text
+crush-date/plan-photos/{planId}/{photoId}.{ext}
+```
+
+数据库只保存 `objectKey`，响应中的 `url` 由后端动态生成。成功返回 `201 Created`：
+
+```json
+{
+  "id": "photo-2ae94f5d-9d10-46ef-a93c-cf0c37c3ab0f",
+  "url": "https://example.oss-cn-beijing.aliyuncs.com/crush-date/plan-photos/plan-01/photo-2ae94f5d-9d10-46ef-a93c-cf0c37c3ab0f.webp",
+  "sortOrder": 0,
+  "createdAt": "2026-07-24T08:30:00.000Z"
+}
+```
+
+计划不存在返回 `404 Not Found`；计划不是 `completed` 或已经有 9 张照片时返回
+`409 Conflict`；缺少文件、格式错误或超过 5MB 时返回 `400 Bad Request`。OSS 上传成功但
+数据库写入失败时，后端会清理刚上传的 OSS 文件。
+
+## 查询过去计划精选照片
+
+```http
+GET /api/crush-date/plans/{planId}/photos
+```
+
+照片不放入计划列表或计划详情响应，进入过去计划详情页后单独查询。仅 `completed` 计划允许
+查询，返回顺序为 `sortOrder ASC`、`createdAt ASC`、`id ASC`。
+
+```json
+{
+  "list": [
+    {
+      "id": "photo-01",
+      "url": "https://example.oss-cn-beijing.aliyuncs.com/crush-date/plan-photos/plan-01/photo-01.webp",
+      "sortOrder": 0,
+      "createdAt": "2026-07-24T08:30:00.000Z"
+    }
+  ]
+}
+```
+
+成功返回 `200 OK`；计划不存在返回 `404 Not Found`；计划不是 `completed` 返回
+`409 Conflict`。
+
+## 调整过去计划精选照片顺序
+
+```http
+PATCH /api/crush-date/plans/{planId}/photos/order
+Content-Type: application/json
+```
+
+```json
+{
+  "photoIds": [
+    "photo-03",
+    "photo-01",
+    "photo-02"
+  ]
+}
+```
+
+`photoIds` 必须无重复并完整包含该计划当前的全部照片，不能缺少、增加或混入其他计划的照片
+ID。后端在事务中按照数组顺序重新写入从 `0` 开始的连续 `sortOrder`。
+
+成功返回 `200 OK`，响应结构与查询照片接口一致，`list` 已按新顺序排列。计划不存在返回
+`404 Not Found`；计划不是 `completed` 返回 `409 Conflict`；数组重复或没有完整包含全部
+照片时返回 `400 Bad Request`。
+
+## 删除单张过去计划精选照片
+
+```http
+DELETE /api/crush-date/plans/{planId}/photos/{photoId}
+```
+
+仅 `completed` 计划允许删除精选照片。照片必须属于 URL 中指定的计划，不能使用一个计划 ID
+删除另一个计划的照片。
+
+数据库事务会删除照片记录，并将剩余照片的 `sortOrder` 按当前展示顺序重新整理为从 `0`
+开始的连续数字。数据库成功后清理对应的 OSS 文件；OSS 清理失败只记录日志，不会将已经成功
+的数据库删除改成失败。
+
+- 删除成功：`204 No Content`，无响应体。
+- 计划或照片不存在、照片不属于该计划：`404 Not Found`。
+- 计划不是 `completed`：`409 Conflict`。
+
+删除整个计划时仍会级联删除该计划全部精选照片记录，并清理对应的全部 OSS 文件。
+
+### Apifox 联调速查
+
+先通过 `GET /api/crush-date/plans` 从 `completedPlans` 中取得真实计划 ID。URL 中的
+`{planId}` 是路径参数占位符，发送时必须替换成真实 ID，不能原样保留。以下三个接口都不需要
+Query 参数。
+
+假设过去计划 ID 为 `plan-c39bc3bf-176d-4068-a4aa-123456789abc`：
+
+1. 上传照片：
+   - 方法选择 `POST`。
+   - URL 填写
+     `http://localhost:3000/api/crush-date/plans/plan-c39bc3bf-176d-4068-a4aa-123456789abc/photos`。
+   - Body 选择 `form-data`。
+   - 新增字段 `file`，字段类型选择“文件”，然后选择一张图片。
+   - 不要手动填写 `Content-Type`，让 Apifox 自动生成包含 boundary 的
+     `multipart/form-data`。
+2. 查询照片：
+   - 方法选择 `GET`，URL 使用上述计划 ID 并以 `/photos` 结尾。
+   - Body 选择 `none`，直接发送。
+   - 记录响应 `list` 中的照片 `id`，排序接口使用照片 ID，不使用 URL。
+3. 调整顺序：
+   - 方法选择 `PATCH`，URL 以 `/photos/order` 结尾。
+   - Body 选择 `JSON`，按期望顺序完整提交全部照片 ID：
+
+```json
+{
+  "photoIds": ["photo-03", "photo-01", "photo-02"]
+}
+```
+
+4. 删除单张照片：
+   - 方法选择 `DELETE`。
+   - URL 填写
+     `http://localhost:3000/api/crush-date/plans/{真实计划ID}/photos/{真实照片ID}`。
+   - Body 选择 `none`，不需要 Query 参数。
+   - 成功状态码是 `204`，没有响应体；删除后重新查询照片列表。
+
+联调删除过去计划时，方法选择 `DELETE`，请求
+`/api/crush-date/plans/{真实计划ID}`，Body 选择 `none`。成功状态码为 `204`，照片记录与
+该计划一起删除，后端同步清理对应的精选照片 OSS 文件。
 
 ## 单独上传图片
 

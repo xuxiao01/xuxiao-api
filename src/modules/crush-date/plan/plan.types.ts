@@ -40,9 +40,17 @@ export interface UpdatePlanInput {
   items?: UpdatePlanItemInput[];
 }
 
-export interface ActivatePlanInput {
-  date: string;
-}
+export type UpdatePlanStatusInput =
+  | {
+    status: 'active';
+    date: string;
+  }
+  | {
+    status: 'completed';
+  }
+  | {
+    status: 'backup';
+  };
 
 export interface ReplanPlanInput {
   date: string;
