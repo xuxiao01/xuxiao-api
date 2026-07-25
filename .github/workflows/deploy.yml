@@ -72,6 +72,7 @@ jobs:
           set -euo pipefail
 
           cd "$DEPLOY_PATH"
+          export CI=true
 
           if [ ! -f .env ]; then
             echo "Missing production .env in $DEPLOY_PATH" >&2
@@ -84,9 +85,10 @@ jobs:
 
           if command -v corepack >/dev/null 2>&1; then
             corepack enable
+            corepack prepare pnpm@10 --activate
           fi
 
-          pnpm install --frozen-lockfile
+          pnpm install --frozen-lockfile --config.confirmModulesPurge=false
           pnpm prisma:generate
           pnpm exec prisma migrate deploy
 
@@ -102,4 +104,3 @@ jobs:
           pm2 save
           curl -fsS "$HEALTHCHECK_URL"
           EOF
-
