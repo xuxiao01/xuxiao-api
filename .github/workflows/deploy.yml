@@ -154,5 +154,20 @@ jobs:
           fi
 
           pm2 save
-          curl -fsS "$HEALTHCHECK_URL"
+          for attempt in $(seq 1 30); do
+            if curl -fsS "$HEALTHCHECK_URL"; then
+              exit 0
+            fi
+
+            echo "Waiting for $PM2_APP_NAME healthcheck ($attempt/30)..."
+            sleep 2
+          done
+
+          echo "Healthcheck failed after waiting. PM2 status:"
+          pm2 describe "$PM2_APP_NAME" || true
+
+          echo "Recent PM2 logs:"
+          pm2 logs "$PM2_APP_NAME" --lines 100 --nostream || true
+
+          exit 1
           EOF
