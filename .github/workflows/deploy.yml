@@ -53,6 +53,9 @@ jobs:
     needs: build
 
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Configure SSH
         run: |
           set -euo pipefail
@@ -61,6 +64,47 @@ jobs:
           printf '%s\n' "${{ secrets.TENCENT_SERVER_SSH_KEY }}" > ~/.ssh/tencent_server_key
           chmod 600 ~/.ssh/tencent_server_key
           ssh-keyscan -p "${{ secrets.TENCENT_SERVER_PORT }}" "${{ secrets.TENCENT_SERVER_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Upload source to server
+        run: |
+          set -euo pipefail
+          tar \
+            --exclude='.git' \
+            --exclude='.env' \
+            --exclude='node_modules' \
+            --exclude='dist' \
+            --exclude='.pnpm-store' \
+            -czf /tmp/xuxiao-api-source.tgz .
+
+          scp -i ~/.ssh/tencent_server_key \
+            -P "${{ secrets.TENCENT_SERVER_PORT }}" \
+            /tmp/xuxiao-api-source.tgz \
+            "${{ secrets.TENCENT_SERVER_USER }}@${{ secrets.TENCENT_SERVER_HOST }}:/tmp/xuxiao-api-source.tgz"
+
+          ssh -i ~/.ssh/tencent_server_key \
+            -p "${{ secrets.TENCENT_SERVER_PORT }}" \
+            "${{ secrets.TENCENT_SERVER_USER }}@${{ secrets.TENCENT_SERVER_HOST }}" \
+            "DEPLOY_PATH='${DEPLOY_PATH}' bash -s" <<'EOF'
+          set -euo pipefail
+
+          mkdir -p "$DEPLOY_PATH"
+
+          if [ ! -f "$DEPLOY_PATH/.env" ]; then
+            echo "Missing production .env in $DEPLOY_PATH" >&2
+            exit 1
+          fi
+
+          find "$DEPLOY_PATH" \
+            -mindepth 1 \
+            -maxdepth 1 \
+            ! -name '.env' \
+            ! -name 'node_modules' \
+            ! -name 'dist' \
+            -exec rm -rf {} +
+
+          tar -xzf /tmp/xuxiao-api-source.tgz -C "$DEPLOY_PATH"
+          rm -f /tmp/xuxiao-api-source.tgz
+          EOF
 
       - name: Deploy application
         run: |
@@ -78,10 +122,6 @@ jobs:
             echo "Missing production .env in $DEPLOY_PATH" >&2
             exit 1
           fi
-
-          git fetch origin main
-          git checkout main
-          git pull --ff-only origin main
 
           if ! command -v pnpm >/dev/null 2>&1; then
             if command -v corepack >/dev/null 2>&1; then
