@@ -83,11 +83,18 @@ jobs:
           git checkout main
           git pull --ff-only origin main
 
-          if command -v corepack >/dev/null 2>&1; then
-            corepack enable
-            corepack prepare pnpm@10 --activate
+          if ! command -v pnpm >/dev/null 2>&1; then
+            if command -v corepack >/dev/null 2>&1; then
+              corepack enable
+            fi
           fi
 
+          if ! command -v pnpm >/dev/null 2>&1; then
+            echo "pnpm is not installed on the server. Install pnpm once before deploying." >&2
+            exit 1
+          fi
+
+          pnpm --version
           pnpm install --frozen-lockfile --config.confirmModulesPurge=false
           pnpm prisma:generate
           pnpm exec prisma migrate deploy
