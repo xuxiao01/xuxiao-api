@@ -17,14 +17,6 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "bcrypt",
-      "prisma",
-      "@prisma/engines",
-      "esbuild"
-    ]
-  },
   "dependencies": {
     "@prisma/adapter-pg": "^7.8.0",
     "@prisma/client": "^7.8.0",
