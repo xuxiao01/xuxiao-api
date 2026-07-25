@@ -117,6 +117,10 @@ jobs:
 
           cd "$DEPLOY_PATH"
           export CI=true
+          export NPM_CONFIG_REGISTRY=https://registry.npmmirror.com/
+          export PNPM_CONFIG_REGISTRY=https://registry.npmmirror.com/
+          export PNPM_CONFIG_TRUST_LOCKFILE=true
+          export PNPM_CONFIG_CONFIRM_MODULES_PURGE=false
 
           if [ ! -f .env ]; then
             echo "Missing production .env in $DEPLOY_PATH" >&2
@@ -135,7 +139,8 @@ jobs:
           fi
 
           pnpm --version
-          pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+          pnpm config get registry
+          pnpm install --frozen-lockfile --config.registry=https://registry.npmmirror.com/ --config.confirmModulesPurge=false
           pnpm prisma:generate
           pnpm exec prisma migrate deploy
 
