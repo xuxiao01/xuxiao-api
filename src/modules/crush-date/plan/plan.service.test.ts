@@ -1,4 +1,5 @@
 import {
+  afterAll,
   beforeEach,
   describe,
   expect,
@@ -20,6 +21,7 @@ const mocks = vi.hoisted(() => {
     findFirst: vi.fn(),
     findMany: vi.fn(),
     findUnique: vi.fn(),
+    update: vi.fn(),
     updateMany: vi.fn(),
   };
   const transactionPlanItem = {
@@ -53,7 +55,11 @@ vi.mock('../upload/upload.service', () => ({
   deleteImage: mocks.deleteImage,
 }));
 
-import { updatePlanStatusSchema } from './plan.schema';
+import {
+  createPlanSchema,
+  replanPlanSchema,
+  updatePlanStatusSchema,
+} from './plan.schema';
 import * as planService from './plan.service';
 
 const createdAt = new Date('2026-07-10T08:00:00.000Z');
@@ -103,6 +109,8 @@ function asCompletedPlan() {
 }
 
 beforeEach(() => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date('2026-08-12T04:00:00.000Z'));
   vi.clearAllMocks();
   mocks.prisma.$transaction.mockImplementation(async (input: unknown) => {
     if (Array.isArray(input)) {
@@ -116,6 +124,10 @@ beforeEach(() => {
     }
     throw new Error('不支持的事务调用');
   });
+});
+
+afterAll(() => {
+  vi.useRealTimers();
 });
 
 describe('updateStatus: active', () => {
@@ -263,6 +275,18 @@ describe('updatePlanStatusSchema', () => {
     }).success).toBe(true);
   });
 
+  it.each([
+    ['2026-08-12', true, '今天'],
+    ['2026-07-29', true, '第 14 天'],
+    ['2026-07-28', false, '第 15 天'],
+    ['2026-08-13', true, '未来日期'],
+  ])('active 日期窗口：%s（%s）', (date, expected, _description) => {
+    expect(updatePlanStatusSchema.safeParse({
+      status: 'active',
+      date,
+    }).success).toBe(expected);
+  });
+
   it('接受不带 date 的 completed 状态', () => {
     expect(updatePlanStatusSchema.safeParse({
       status: 'completed',
@@ -273,6 +297,66 @@ describe('updatePlanStatusSchema', () => {
     expect(updatePlanStatusSchema.safeParse({
       status: 'backup',
     }).success).toBe(true);
+  });
+});
+
+describe('active date window for create and replan', () => {
+  const createInput = {
+    title: '补录计划',
+    status: 'active' as const,
+    date: '2026-07-29',
+    scenario: 'free' as const,
+    scenarioText: '自由安排',
+    note: '',
+    items: [],
+  };
+
+  it('创建 active 计划允许最近 14 天，拒绝第 15 天', () => {
+    expect(createPlanSchema.safeParse(createInput).success).toBe(true);
+    expect(createPlanSchema.safeParse({
+      ...createInput,
+      date: '2026-07-28',
+    }).success).toBe(false);
+  });
+
+  it('replan 允许最近 14 天，拒绝第 15 天', () => {
+    expect(replanPlanSchema.safeParse({ date: '2026-07-29' }).success).toBe(true);
+    expect(replanPlanSchema.safeParse({ date: '2026-07-28' }).success).toBe(false);
+  });
+});
+
+describe('update active plan date window', () => {
+  it('允许将 active 计划改为最近 14 天内的日期', async () => {
+    mocks.transactionPlan.findUnique.mockResolvedValue({
+      status: CrushDatePlanStatus.ACTIVE,
+    });
+    mocks.transactionPlan.update.mockResolvedValue(asActivePlan());
+
+    await expect(planService.update(backupPlan.id, {
+      date: '2026-07-29',
+    })).resolves.toBeDefined();
+
+    expect(mocks.transactionPlan.update).toHaveBeenCalledWith({
+      where: { id: backupPlan.id },
+      data: {
+        date: new Date('2026-07-29T00:00:00.000Z'),
+      },
+      include: { items: true },
+    });
+  });
+
+  it('拒绝将 active 计划改为超过 14 天的过去日期', async () => {
+    mocks.transactionPlan.findUnique.mockResolvedValue({
+      status: CrushDatePlanStatus.ACTIVE,
+    });
+
+    await expect(planService.update(backupPlan.id, {
+      date: '2026-07-28',
+    })).rejects.toMatchObject({
+      statusCode: 400,
+      message: 'date 不能早于 14 天前',
+    });
+    expect(mocks.transactionPlan.update).not.toHaveBeenCalled();
   });
 });
 

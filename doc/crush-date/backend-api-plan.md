@@ -274,7 +274,7 @@ Content-Type: application/json
 
 创建时只接受 `active` 或 `backup`：
 
-- `active`：`date` 必填，且不能早于当前业务日期；系统中不能已有本次计划。
+- `active`：`date` 必填，且不能早于上海时区当前日期往前 14 天；系统中不能已有本次计划。
 - `backup`：`date` 必须为 `null`。
 - `completed`：不能直接创建，只能通过完成本次计划产生。
 

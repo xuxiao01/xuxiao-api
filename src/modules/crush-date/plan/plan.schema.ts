@@ -5,30 +5,12 @@ import {
   planPeriods,
   planScenarios,
 } from './plan.types';
+import {
+  isActivePlanDateAllowed,
+  isValidPlanDate,
+} from './plan-date';
 
-const datePattern = /^\d{4}-\d{2}-\d{2}$/;
-
-function isValidDate(value: string): boolean {
-  if (!datePattern.test(value)) {
-    return false;
-  }
-
-  const date = new Date(`${value}T00:00:00.000Z`);
-  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
-}
-
-function getShanghaiDate(): string {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'Asia/Shanghai',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(new Date());
-  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
-  return `${values.year}-${values.month}-${values.day}`;
-}
-
-const planDateSchema = z.string().refine(isValidDate, {
+const planDateSchema = z.string().refine(isValidPlanDate, {
   message: 'date 必须是有效的 YYYY-MM-DD 日期',
 });
 
@@ -65,11 +47,11 @@ export const createPlanSchema = z
           path: ['date'],
           message: 'active 计划的 date 必填',
         });
-      } else if (input.date < getShanghaiDate()) {
+      } else if (isValidPlanDate(input.date) && !isActivePlanDateAllowed(input.date)) {
         context.addIssue({
           code: 'custom',
           path: ['date'],
-          message: 'active 计划的 date 不能早于当前日期',
+          message: 'date 不能早于 14 天前',
         });
       }
     }
@@ -137,11 +119,11 @@ const activatePlanStatusSchema = z
   })
   .strict()
   .superRefine((input, context) => {
-    if (input.date < getShanghaiDate()) {
+    if (isValidPlanDate(input.date) && !isActivePlanDateAllowed(input.date)) {
       context.addIssue({
         code: 'custom',
         path: ['date'],
-        message: 'date 不能早于当前日期',
+        message: 'date 不能早于 14 天前',
       });
     }
   });
@@ -170,11 +152,11 @@ export const replanPlanSchema = z
   })
   .strict()
   .superRefine((input, context) => {
-    if (input.date < getShanghaiDate()) {
+    if (isValidPlanDate(input.date) && !isActivePlanDateAllowed(input.date)) {
       context.addIssue({
         code: 'custom',
         path: ['date'],
-        message: 'date 不能早于当前日期',
+        message: 'date 不能早于 14 天前',
       });
     }
   });

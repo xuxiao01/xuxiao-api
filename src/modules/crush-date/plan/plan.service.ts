@@ -11,6 +11,7 @@ import { prisma } from '../../../lib/prisma';
 import { AppError } from '../../../utils/app-error';
 import * as uploadService from '../upload/upload.service';
 import { toPlanResponse } from './plan.mapper';
+import { isActivePlanDateAllowed } from './plan-date';
 import type {
   CreatePlanInput,
   CreatePlanItemInput,
@@ -60,17 +61,6 @@ function normalizeItemOrder<T extends CreatePlanItemInput>(items: T[]): T[] {
     ...item,
     order: normalized.get(index) ?? 0,
   }));
-}
-
-function getShanghaiDate(): string {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'Asia/Shanghai',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(new Date());
-  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
-  return `${values.year}-${values.month}-${values.day}`;
 }
 
 async function buildUpdatedPlanItems(
@@ -267,8 +257,8 @@ export async function update(
         if (input.date === null) {
           throw new AppError(400, 'active 计划的 date 必填');
         }
-        if (input.date < getShanghaiDate()) {
-          throw new AppError(400, 'active 计划的 date 不能早于当前日期');
+        if (!isActivePlanDateAllowed(input.date)) {
+          throw new AppError(400, 'date 不能早于 14 天前');
         }
       } else if (input.date !== null) {
         throw new AppError(400, 'backup 计划的 date 必须为 null');

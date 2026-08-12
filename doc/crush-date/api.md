@@ -208,7 +208,7 @@ Content-Type: application/json
 字段规则：
 
 - `status`：仅支持 `active` 或 `backup`。
-- `active`：`date` 必填，格式为 `YYYY-MM-DD`，不能早于上海时区的当前日期；系统中最多存在一条。
+- `active`：`date` 必填，格式为 `YYYY-MM-DD`，不能早于上海时区当前日期往前 14 天；系统中最多存在一条。
 - `backup`：`date` 必须为 `null`。
 - `scenario`：支持 `hot`、`cold`、`rainy`、`sunny`、`free`。
 - `period`：支持 `morning`、`noon`、`afternoon`、`evening`。
@@ -391,7 +391,7 @@ active → backup
 active → completed
 ```
 
-从 `backup` 更新为 `active` 时，`date` 必填，必须是有效的 `YYYY-MM-DD`，且不能早于上海时区的当前日期；系统中不能已有其他 `active` 计划。
+从 `backup` 更新为 `active` 时，`date` 必填，必须是有效的 `YYYY-MM-DD`，且不能早于上海时区当前日期往前 14 天；系统中不能已有其他 `active` 计划。
 从 `active` 更新为 `backup` 时不能提交 `date`，后端会将原计划日期清空。
 
 状态流转会直接更新原计划：
@@ -425,7 +425,7 @@ Content-Type: application/json
 }
 ```
 
-`date` 必须是有效的 `YYYY-MM-DD`，且不能早于上海时区的当前日期。源计划必须是 `completed`，系统中不能已有 `active` 计划。
+`date` 必须是有效的 `YYYY-MM-DD`，且不能早于上海时区当前日期往前 14 天。源计划必须是 `completed`，系统中不能已有 `active` 计划。
 
 接口会保留原过去计划，并复制生成一条新的本次计划：
 
