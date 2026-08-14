@@ -20,6 +20,20 @@ jobs:
   build:
     name: Build and type-check
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: xuxiao_api_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d xuxiao_api_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     steps:
       - name: Checkout repository
@@ -43,6 +57,22 @@ jobs:
         run: pnpm prisma:generate
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/xuxiao_api?schema=public
+
+      - name: Run unit tests
+        run: pnpm test
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/xuxiao_api_test?schema=public
+          OSS_REGION: oss-cn-beijing
+          OSS_BUCKET: test-bucket
+          OSS_ENDPOINT: https://oss-cn-beijing.aliyuncs.com
+          OSS_PUBLIC_BASE_URL: https://test-bucket.oss-cn-beijing.aliyuncs.com
+          OSS_ACCESS_KEY_ID: test-access-key-id
+          OSS_ACCESS_KEY_SECRET: test-access-key-secret
+
+      - name: Verify database migration safety
+        run: pnpm test:integration
+        env:
+          TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/xuxiao_api_test
 
       - name: Build
         run: pnpm build
@@ -142,10 +172,10 @@ jobs:
           pnpm config get registry
           pnpm install --frozen-lockfile --force --config.registry=https://registry.npmmirror.com/ --config.confirmModulesPurge=false
           pnpm prisma:generate
-          pnpm exec prisma migrate deploy
 
           rm -rf dist
           pnpm build
+          pnpm exec prisma migrate deploy
 
           if pm2 describe "$PM2_APP_NAME" >/dev/null 2>&1; then
             pm2 restart "$PM2_APP_NAME" --update-env

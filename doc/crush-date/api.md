@@ -8,19 +8,61 @@ http://localhost:3000
 
 Crush Date 接口当前无需登录或 Authorization Header。
 
+本页所有成功示例均为实际业务响应，接口不会额外包裹 `success` 或 `data`。参数校验失败时
+返回 `400`；资源不存在时返回 `404`；错误响应统一为：
+
+```json
+{
+  "success": false,
+  "message": "错误信息"
+}
+```
+
+## 内容接口一览
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/api/crush-date/foods` | 筛选、搜索和分页查询美食 |
+| GET | `/api/crush-date/foods/{id}` | 查询单条美食详情 |
+| GET | `/api/crush-date/places` | 筛选和分页查询地点 |
+| GET | `/api/crush-date/places/{id}` | 查询单条地点详情 |
+| GET | `/api/crush-date/cities` | 查询城市配置 |
+| GET | `/api/crush-date/food-categories` | 查询美食分类配置 |
+| GET | `/api/crush-date/place-categories` | 查询地点分类配置 |
+| POST | `/api/crush-date/content-items` | 新增美食或地点并上传图片 |
+| PATCH | `/api/crush-date/content-items/{id}/visited` | 标记或撤销吃过、去过 |
+| DELETE | `/api/crush-date/content-items/{id}` | 删除美食或地点 |
+
 ## 美食列表
 
 ```http
-GET /api/crush-date/foods?page=1&pageSize=20
+GET /api/crush-date/foods?cityCode=beijing&visited=false&categoryId=3&keyword=牛肉&page=1&pageSize=20
 ```
 
-`page` 默认 `1`；`pageSize` 默认 `20`，最大 `100`。列表按创建时间倒序返回。
+Query 参数均可选并可组合：
+
+- `cityCode`：`beijing | tianjin | harbin`。
+- `visited`：只接受 `true` 或 `false`。
+- `categoryId=1`：全部分类，与不传 `categoryId` 等价。
+- `categoryId=2`～`9`：按具体美食分类筛选，映射见“城市和分类配置”。
+- `keyword`：去除首尾空格后搜索 `name`、`type`、`comment`，最大 50 个字符；空字符串等同未传。
+- `page`：默认 `1`，必须是大于等于 1 的整数。
+- `pageSize`：默认 `20`，取值 `1-100`。
+
+不传任何筛选参数时仍返回全部城市、全部分类和全部状态的数据，只应用分页。非法城市、分类、
+visited 或分页参数返回 `400 Bad Request`。
+
+想吃按 `createdAt DESC, id DESC` 排序，吃过按 `visitedAt DESC, id DESC` 排序；未传
+`visited` 时使用创建时间排序。
 
 ```json
 {
   "list": [
     {
       "id": "food-550e8400-e29b-41d4-a716-446655440000",
+      "contentType": "food",
+      "cityCode": "beijing",
+      "categoryId": "4",
       "name": "阿里郎朝鲜烤肉",
       "type": "烤肉 · 朝鲜风味",
       "comment": "想一起去吃！",
@@ -29,17 +71,124 @@ GET /api/crush-date/foods?page=1&pageSize=20
       "visitedAt": "2026-07-15T12:00:00.000Z"
     }
   ],
-  "total": 1
+  "total": 1,
+  "page": 1,
+  "pageSize": 20,
+  "hasMore": false
+}
+```
+
+## 美食详情
+
+```http
+GET /api/crush-date/foods/{id}
+```
+
+返回与美食列表项相同的完整结构。记录不存在或 ID 属于地点时返回 `404 Not Found`。
+
+示例：
+
+```json
+{
+  "id": "food-550e8400-e29b-41d4-a716-446655440000",
+  "contentType": "food",
+  "cityCode": "beijing",
+  "categoryId": "4",
+  "name": "阿里郎朝鲜烤肉",
+  "type": "烤肉 · 朝鲜风味",
+  "comment": "想一起去吃！",
+  "image": "https://cdn.example.com/foods/food-01.webp",
+  "visited": false,
+  "visitedAt": null
 }
 ```
 
 ## 出去玩的地点列表
 
 ```http
-GET /api/crush-date/places?page=1&pageSize=20
+GET /api/crush-date/places?cityCode=tianjin&visited=false&categoryId=2&keyword=公园&page=1&pageSize=20
 ```
 
-分页规则及响应结构与美食列表一致，列表中只返回 `contentType = place` 的数据。
+支持 `cityCode`、`visited`、`categoryId`、`keyword`、`page`、`pageSize`，分页、关键词和排序规则
+与美食列表一致。地点列表只返回 `contentType = place` 的数据。
+
+- `categoryId=1`：全部分类，与不传 `categoryId` 等价。
+- `categoryId=2`～`7`：按具体地点分类筛选。
+- `keyword`：trim 后同时搜索 `name`、`type`、`comment`，最大 50 个字符。
+
+示例：
+
+```http
+GET /api/crush-date/places?cityCode=tianjin&visited=false&categoryId=2&keyword=公园&page=1&pageSize=20
+```
+
+地点记录的 `categoryId` 只会返回字符串 `2`～`7`，不会返回仅用于筛选的 `1`。
+
+## 地点详情
+
+```http
+GET /api/crush-date/places/{id}
+```
+
+返回与地点列表项相同的完整结构。记录不存在或 ID 属于美食时返回 `404 Not Found`。
+
+## 城市和分类配置
+
+```http
+GET /api/crush-date/cities
+GET /api/crush-date/food-categories
+GET /api/crush-date/place-categories
+```
+
+城市响应：
+
+```json
+{
+  "list": [
+    { "code": "beijing", "name": "北京", "enabled": true, "sortOrder": 0 },
+    { "code": "tianjin", "name": "天津", "enabled": true, "sortOrder": 1 },
+    { "code": "harbin", "name": "哈尔滨", "enabled": true, "sortOrder": 2 }
+  ]
+}
+```
+
+美食分类响应：
+
+```json
+{
+  "list": [
+    { "id": "1", "name": "全部分类", "sortOrder": 0, "filterOnly": true },
+    { "id": "2", "name": "中餐", "sortOrder": 1, "filterOnly": false },
+    { "id": "3", "name": "火锅", "sortOrder": 2, "filterOnly": false },
+    { "id": "4", "name": "烧烤烤肉", "sortOrder": 3, "filterOnly": false },
+    { "id": "5", "name": "日韩及亚洲料理", "sortOrder": 4, "filterOnly": false },
+    { "id": "6", "name": "西餐", "sortOrder": 5, "filterOnly": false },
+    { "id": "7", "name": "小吃快餐", "sortOrder": 6, "filterOnly": false },
+    { "id": "8", "name": "甜品饮品", "sortOrder": 7, "filterOnly": false },
+    { "id": "9", "name": "其他", "sortOrder": 8, "filterOnly": false }
+  ]
+}
+```
+
+前端应使用配置接口提供的名称和排序，避免重复维护显示文案。
+
+地点分类响应：
+
+```json
+{
+  "list": [
+    { "id": "1", "name": "全部分类", "sortOrder": 0, "filterOnly": true },
+    { "id": "2", "name": "公园户外", "sortOrder": 1, "filterOnly": false },
+    { "id": "3", "name": "景点打卡", "sortOrder": 2, "filterOnly": false },
+    { "id": "4", "name": "展览演出", "sortOrder": 3, "filterOnly": false },
+    { "id": "5", "name": "运动健身", "sortOrder": 4, "filterOnly": false },
+    { "id": "6", "name": "休闲娱乐", "sortOrder": 5, "filterOnly": false },
+    { "id": "7", "name": "其他", "sortOrder": 6, "filterOnly": false }
+  ]
+}
+```
+
+`filterOnly=true` 表示该值只能用于列表筛选。新增美食或地点时都不能提交 `categoryId=1`。
 
 ## 新增美食或地点
 
@@ -54,6 +203,8 @@ Content-Type: multipart/form-data
 
 - `file`：必填，图片文件。
 - `contentType`：必填，仅支持 `food` 或 `place`。
+- `cityCode`：可选，缺失时使用 `beijing`。
+- `categoryId`：可选。美食缺失时使用 `9`，且只能提交 `2`～`9`；地点缺失时使用 `7`，且只能提交 `2`～`7`。
 - `name`：必填，不能只包含空白字符。
 - `type`：必填，不能只包含空白字符。
 - `comment`：必填，允许空字符串。
@@ -64,6 +215,8 @@ Content-Type: multipart/form-data
 {
   "id": "food-550e8400-e29b-41d4-a716-446655440000",
   "contentType": "food",
+  "cityCode": "beijing",
+  "categoryId": "4",
   "name": "阿里郎朝鲜烤肉",
   "type": "烤肉 · 朝鲜风味",
   "comment": "想一起去感受一下当太阳的感觉！",
@@ -74,6 +227,22 @@ Content-Type: multipart/form-data
 ```
 
 服务端会检查声明的 MIME 类型和实际文件签名，然后上传 OSS 并写入数据库。如果数据库写入失败，会尝试删除刚上传的 OSS 图片。
+
+兼容期内旧前端可以继续省略 `cityCode` 和 `categoryId`。新版前端应明确提交当前城市和分类；
+否则美食会保存为北京、数字分类 `9`（其他），地点会保存为北京、数字分类 `7`（其他）。
+
+cURL 示例：
+
+```bash
+curl -X POST 'http://localhost:3000/api/crush-date/content-items' \
+  -F 'file=@/path/to/food.webp' \
+  -F 'contentType=food' \
+  -F 'cityCode=beijing' \
+  -F 'categoryId=4' \
+  -F 'name=阿里郎朝鲜烤肉' \
+  -F 'type=烤肉 · 朝鲜风味' \
+  -F 'comment=想一起去吃！'
+```
 
 ## 删除美食或地点
 
@@ -156,6 +325,8 @@ Content-Type: application/json
 {
   "id": "food-550e8400-e29b-41d4-a716-446655440000",
   "contentType": "food",
+  "cityCode": "beijing",
+  "categoryId": "4",
   "name": "阿里郎朝鲜烤肉",
   "type": "烤肉 · 朝鲜风味",
   "comment": "想一起去吃！",
@@ -174,7 +345,8 @@ Content-Type: application/json
 - 内容不存在返回 `404 Not Found`。
 - `visitedAt` 返回 ISO 8601 UTC 时间，前端负责转换为本地时间。
 
-美食列表、地点列表和新增内容响应都会返回 `visited`、`visitedAt`。新建内容默认为 `false` 和 `null`；列表仍按内容创建时间倒序，不按标记时间重新排序。
+美食列表、地点列表和新增内容响应都会返回 `visited`、`visitedAt`。新建内容默认为
+`false` 和 `null`；吃过列表按 `visitedAt` 倒序，其他列表按创建时间倒序。
 
 ## 新增计划
 

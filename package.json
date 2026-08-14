@@ -9,6 +9,7 @@
     "dev:weekly": "APP_MODULES=weekly-lab tsx watch src/main.ts",
     "build": "tsc",
     "test": "vitest run src",
+    "test:integration": "vitest run tests",
     "start": "node dist/main.js",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",

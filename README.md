@@ -83,7 +83,12 @@ xuxiao-api/
 | DELETE | `/api/weekly-reports/:weekKey` | 是 | 删除周报 |
 | GET | `/api/public/users/:username/weekly-reports/:weekKey` | 否 | 公开展示 |
 | GET | `/api/crush-date/foods` | 否 | 获取 Crush Date 美食列表 |
+| GET | `/api/crush-date/foods/:id` | 否 | 获取 Crush Date 美食详情 |
 | GET | `/api/crush-date/places` | 否 | 获取 Crush Date 出去玩的地点列表 |
+| GET | `/api/crush-date/places/:id` | 否 | 获取 Crush Date 地点详情 |
+| GET | `/api/crush-date/cities` | 否 | 获取支持的城市配置 |
+| GET | `/api/crush-date/food-categories` | 否 | 获取美食分类配置 |
+| GET | `/api/crush-date/place-categories` | 否 | 获取地点分类配置 |
 | POST | `/api/crush-date/content-items` | 否 | 上传图片并新增 Crush Date 美食或地点 |
 | DELETE | `/api/crush-date/content-items/:id` | 否 | 删除 Crush Date 美食或地点 |
 | PATCH | `/api/crush-date/content-items/:id/visited` | 否 | 标记或撤销吃过、去过状态 |

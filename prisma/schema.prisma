@@ -97,6 +97,8 @@ model WeeklyReportItem {
 model CrushDateContentItem {
   id          String               @id
   contentType CrushDateContentType @map("content_type")
+  cityCode    String               @default("beijing") @map("city_code")
+  categoryId  String               @default("other") @map("category_id")
   name        String
   type        String
   comment     String
@@ -107,6 +109,7 @@ model CrushDateContentItem {
   updatedAt   DateTime             @updatedAt @map("updated_at")
 
   @@index([contentType, createdAt(sort: Desc)])
+  @@index([contentType, cityCode, visited, createdAt(sort: Desc), id(sort: Desc)])
   @@map("crush_date_content_items")
 }
 
