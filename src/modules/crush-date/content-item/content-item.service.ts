@@ -9,6 +9,7 @@ import { AppError } from '../../../utils/app-error';
 import * as uploadService from '../upload/upload.service';
 import {
   cities,
+  cityAdcodePrefixes,
   foodCategories,
   placeCategories,
 } from './content-item.config';
@@ -23,6 +24,7 @@ import type {
   CreateContentItemInput,
   CreateContentItemWithImageInput,
   ListContentItemsQuery,
+  UpdateLocationInput,
   UpdateVisitedInput,
 } from './content-item.types';
 
@@ -69,6 +71,39 @@ function toContentItemResponse(
     image: item.image,
     visited: item.visited,
     visitedAt: item.visitedAt?.toISOString() ?? null,
+    location: item.poiProvider
+      && item.poiId
+      && item.poiTitle
+      && item.poiAddress
+      && item.poiLatitude !== null
+      && item.poiLongitude !== null
+      && item.poiAdcode
+      ? {
+        provider: item.poiProvider as 'tencent',
+        poiId: item.poiId,
+        title: item.poiTitle,
+        address: item.poiAddress,
+        latitude: Number(item.poiLatitude),
+        longitude: Number(item.poiLongitude),
+        adcode: item.poiAdcode,
+      }
+      : null,
+  };
+}
+
+function toDatabaseLocation(input: CreateContentItemInput) {
+  if (!input.poiProvider) {
+    return {};
+  }
+
+  return {
+    poiProvider: input.poiProvider,
+    poiId: input.poiId,
+    poiTitle: input.poiTitle,
+    poiAddress: input.poiAddress,
+    poiLatitude: input.poiLatitude,
+    poiLongitude: input.poiLongitude,
+    poiAdcode: input.poiAdcode,
   };
 }
 
@@ -83,6 +118,7 @@ async function create(input: CreateContentItemInput): Promise<ContentItemRespons
       type: input.type,
       comment: input.comment,
       image: input.image,
+      ...toDatabaseLocation(input),
     },
   });
 
@@ -108,6 +144,13 @@ export async function createWithImage(
         type: input.type,
         comment: input.comment,
         image: uploadedImage.url,
+        poiProvider: input.poiProvider,
+        poiId: input.poiId,
+        poiTitle: input.poiTitle,
+        poiAddress: input.poiAddress,
+        poiLatitude: input.poiLatitude,
+        poiLongitude: input.poiLongitude,
+        poiAdcode: input.poiAdcode,
       });
     }
 
@@ -119,6 +162,13 @@ export async function createWithImage(
       type: input.type,
       comment: input.comment,
       image: uploadedImage.url,
+      poiProvider: input.poiProvider,
+      poiId: input.poiId,
+      poiTitle: input.poiTitle,
+      poiAddress: input.poiAddress,
+      poiLatitude: input.poiLatitude,
+      poiLongitude: input.poiLongitude,
+      poiAdcode: input.poiAdcode,
     });
   } catch (error) {
     try {
@@ -289,6 +339,60 @@ export async function updateVisited(
     });
   });
 
+  if (!item) {
+    throw new AppError(404, '美食或地点不存在');
+  }
+
+  return toContentItemResponse(item);
+}
+
+export async function updateLocation(
+  id: string,
+  input: UpdateLocationInput,
+): Promise<ContentItemResponse> {
+  const existing = await prisma.crushDateContentItem.findUnique({
+    where: { id },
+  });
+  if (!existing) {
+    throw new AppError(404, '美食或地点不存在');
+  }
+
+  if (
+    input.location
+    && !input.location.adcode.startsWith(
+      cityAdcodePrefixes[existing.cityCode as keyof typeof cityAdcodePrefixes],
+    )
+  ) {
+    throw new AppError(400, 'location.adcode 与内容 cityCode 不匹配');
+  }
+
+  const locationData = input.location
+    ? {
+      poiProvider: input.location.provider,
+      poiId: input.location.poiId,
+      poiTitle: input.location.title,
+      poiAddress: input.location.address,
+      poiLatitude: input.location.latitude,
+      poiLongitude: input.location.longitude,
+      poiAdcode: input.location.adcode,
+    }
+    : {
+      poiProvider: null,
+      poiId: null,
+      poiTitle: null,
+      poiAddress: null,
+      poiLatitude: null,
+      poiLongitude: null,
+      poiAdcode: null,
+    };
+
+  await prisma.crushDateContentItem.updateMany({
+    where: { id },
+    data: locationData,
+  });
+  const item = await prisma.crushDateContentItem.findUnique({
+    where: { id },
+  });
   if (!item) {
     throw new AppError(404, '美食或地点不存在');
   }

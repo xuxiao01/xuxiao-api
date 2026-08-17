@@ -58,3 +58,15 @@ export type PlaceCategoryId = Exclude<PlaceCategoryFilterId, '1'>;
 export const DEFAULT_CITY_CODE: CityCode = 'beijing';
 export const DEFAULT_FOOD_CATEGORY_ID: FoodCategoryId = '9';
 export const DEFAULT_PLACE_CATEGORY_ID: PlaceCategoryId = '7';
+
+export const cityTencentRegions: Record<CityCode, string> = {
+  beijing: '北京市',
+  tianjin: '天津市',
+  harbin: '哈尔滨市',
+};
+
+export const cityAdcodePrefixes: Record<CityCode, string> = {
+  beijing: '11',
+  tianjin: '12',
+  harbin: '2301',
+};

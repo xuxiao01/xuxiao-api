@@ -5,6 +5,7 @@ import {
   contentItemParamsSchema,
   listFoodsQuerySchema,
   listPlacesQuerySchema,
+  updateLocationSchema,
   updateVisitedSchema,
 } from './content-item.schema';
 import * as contentItemService from './content-item.service';
@@ -98,6 +99,21 @@ export async function updateVisited(
     const { id } = contentItemParamsSchema.parse(req.params);
     const input = updateVisitedSchema.parse(req.body);
     const item = await contentItemService.updateVisited(id, input);
+    return res.json(item);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function updateLocation(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  try {
+    const { id } = contentItemParamsSchema.parse(req.params);
+    const input = updateLocationSchema.parse(req.body);
+    const item = await contentItemService.updateLocation(id, input);
     return res.json(item);
   } catch (error) {
     next(error);

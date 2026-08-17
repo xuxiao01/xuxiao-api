@@ -3,6 +3,7 @@ import {
   createContentItemSchema,
   listFoodsQuerySchema,
   listPlacesQuerySchema,
+  updateLocationSchema,
 } from './content-item.schema';
 
 describe('createContentItemSchema', () => {
@@ -70,6 +71,88 @@ describe('createContentItemSchema', () => {
         categoryId,
       }).success).toBe(false);
     }
+  });
+
+  it('接受完整腾讯位置并将 multipart 经纬度转换为数字', () => {
+    const result = createContentItemSchema.parse({
+      ...baseInput,
+      cityCode: 'beijing',
+      poiProvider: 'tencent',
+      poiId: 'poi-001',
+      poiTitle: '海底捞火锅（国贸店）',
+      poiAddress: '北京市朝阳区建国门外大街 1 号',
+      poiLatitude: '39.9087',
+      poiLongitude: '116.4598',
+      poiAdcode: '110105',
+    });
+
+    expect(result).toMatchObject({
+      poiLatitude: 39.9087,
+      poiLongitude: 116.4598,
+      poiAdcode: '110105',
+    });
+  });
+
+  it('拒绝不完整位置、非法坐标和城市不匹配', () => {
+    expect(createContentItemSchema.safeParse({
+      ...baseInput,
+      poiProvider: 'tencent',
+    }).success).toBe(false);
+    expect(createContentItemSchema.safeParse({
+      ...baseInput,
+      poiProvider: 'tencent',
+      poiId: 'poi-001',
+      poiTitle: '地点',
+      poiAddress: '地址',
+      poiLatitude: '91',
+      poiLongitude: '116.4',
+      poiAdcode: '110105',
+    }).success).toBe(false);
+    expect(createContentItemSchema.safeParse({
+      ...baseInput,
+      poiProvider: 'tencent',
+      poiId: 'poi-001',
+      poiTitle: '地点',
+      poiAddress: '地址',
+      poiLatitude: '',
+      poiLongitude: '116.4',
+      poiAdcode: '110105',
+    }).success).toBe(false);
+    expect(createContentItemSchema.safeParse({
+      ...baseInput,
+      cityCode: 'tianjin',
+      poiProvider: 'tencent',
+      poiId: 'poi-001',
+      poiTitle: '地点',
+      poiAddress: '地址',
+      poiLatitude: '39.9',
+      poiLongitude: '116.4',
+      poiAdcode: '110105',
+    }).success).toBe(false);
+  });
+});
+
+describe('updateLocationSchema', () => {
+  const location = {
+    provider: 'tencent',
+    poiId: 'poi-001',
+    title: '海底捞火锅（国贸店）',
+    address: '北京市朝阳区建国门外大街 1 号',
+    latitude: 39.9087,
+    longitude: 116.4598,
+    adcode: '110105',
+  };
+
+  it('接受完整位置和 null 清除位置', () => {
+    expect(updateLocationSchema.parse({ location })).toEqual({ location });
+    expect(updateLocationSchema.parse({ location: null })).toEqual({ location: null });
+  });
+
+  it('拒绝部分位置和额外字段', () => {
+    expect(updateLocationSchema.safeParse({
+      location: { provider: 'tencent', poiId: 'poi-001' },
+    }).success).toBe(false);
+    expect(updateLocationSchema.safeParse({ location, name: '不能修改' }).success).toBe(false);
   });
 });
 

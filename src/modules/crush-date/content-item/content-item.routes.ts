@@ -7,5 +7,6 @@ const router: IRouter = Router();
 router.post('/', imageUploadMiddleware, contentItemController.create);
 router.delete('/:id', contentItemController.remove);
 router.patch('/:id/visited', contentItemController.updateVisited);
+router.patch('/:id/location', contentItemController.updateLocation);
 
 export default router;

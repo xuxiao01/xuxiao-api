@@ -83,6 +83,11 @@ describeWithDatabase('Crush Date content item migration', () => {
       'prisma/migrations/20260814140000_convert_food_categories_to_numeric/migration.sql',
     ), 'utf8');
     await client.query(foodCategoryMigration);
+
+    const poiLocationMigration = readFileSync(resolve(
+      'prisma/migrations/20260817000000_add_content_item_poi_location/migration.sql',
+    ), 'utf8');
+    await client.query(poiLocationMigration);
   });
 
   afterAll(async () => {
@@ -95,7 +100,9 @@ describeWithDatabase('Crush Date content item migration', () => {
   it('保留旧字段并为旧记录填充安全默认值', async () => {
     const result = await client.query(`
       SELECT id, content_type, name, type, comment, image, visited,
-             visited_at, created_at, updated_at, city_code, category_id
+             visited_at, created_at, updated_at, city_code, category_id,
+             poi_provider, poi_id, poi_title, poi_address, poi_latitude,
+             poi_longitude, poi_adcode
       FROM "crush_date_content_items"
     `);
 
@@ -105,11 +112,70 @@ describeWithDatabase('Crush Date content item migration', () => {
       ...legacyRowsBefore['food-legacy'],
       city_code: 'beijing',
       category_id: '9',
+      poi_provider: null,
+      poi_id: null,
+      poi_title: null,
+      poi_address: null,
+      poi_latitude: null,
+      poi_longitude: null,
+      poi_adcode: null,
     });
     expect(rowsById['place-legacy']).toMatchObject({
       ...legacyRowsBefore['place-legacy'],
       city_code: 'beijing',
       category_id: '7',
+      poi_provider: null,
+      poi_id: null,
+      poi_title: null,
+      poi_address: null,
+      poi_latitude: null,
+      poi_longitude: null,
+      poi_adcode: null,
+    });
+  });
+
+  it('位置约束只接受完整合法的腾讯 POI', async () => {
+    await expect(client.query(`
+      UPDATE "crush_date_content_items"
+      SET "poi_provider" = 'tencent'
+      WHERE "id" = 'food-legacy'
+    `)).rejects.toMatchObject({ code: '23514' });
+
+    await expect(client.query(`
+      UPDATE "crush_date_content_items"
+      SET "poi_provider" = 'amap',
+          "poi_id" = 'poi-1',
+          "poi_title" = '地点',
+          "poi_address" = '地址',
+          "poi_latitude" = 39.9,
+          "poi_longitude" = 116.4,
+          "poi_adcode" = '110105'
+      WHERE "id" = 'food-legacy'
+    `)).rejects.toMatchObject({ code: '23514' });
+
+    await expect(client.query(`
+      UPDATE "crush_date_content_items"
+      SET "poi_provider" = 'tencent',
+          "poi_id" = 'poi-1',
+          "poi_title" = '海底捞火锅（国贸店）',
+          "poi_address" = '北京市朝阳区',
+          "poi_latitude" = 39.9087,
+          "poi_longitude" = 116.4598,
+          "poi_adcode" = '110105'
+      WHERE "id" = 'food-legacy'
+    `)).resolves.toMatchObject({ rowCount: 1 });
+
+    const result = await client.query(`
+      SELECT poi_provider, poi_id, poi_latitude, poi_longitude, poi_adcode
+      FROM "crush_date_content_items"
+      WHERE "id" = 'food-legacy'
+    `);
+    expect(result.rows[0]).toMatchObject({
+      poi_provider: 'tencent',
+      poi_id: 'poi-1',
+      poi_latitude: '39.908700',
+      poi_longitude: '116.459800',
+      poi_adcode: '110105',
     });
   });
 

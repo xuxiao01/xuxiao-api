@@ -29,8 +29,10 @@ Crush Date 接口当前无需登录或 Authorization Header。
 | GET | `/api/crush-date/cities` | 查询城市配置 |
 | GET | `/api/crush-date/food-categories` | 查询美食分类配置 |
 | GET | `/api/crush-date/place-categories` | 查询地点分类配置 |
+| GET | `/api/crush-date/map/poi-suggestions` | 按城市搜索腾讯 POI 候选 |
 | POST | `/api/crush-date/content-items` | 新增美食或地点并上传图片 |
 | PATCH | `/api/crush-date/content-items/{id}/visited` | 标记或撤销吃过、去过 |
+| PATCH | `/api/crush-date/content-items/{id}/location` | 设置、替换或清除内容位置 |
 | DELETE | `/api/crush-date/content-items/{id}` | 删除美食或地点 |
 
 ## 美食列表
@@ -68,7 +70,8 @@ visited 或分页参数返回 `400 Bad Request`。
       "comment": "想一起去吃！",
       "image": "https://cdn.example.com/foods/food-01.webp",
       "visited": true,
-      "visitedAt": "2026-07-15T12:00:00.000Z"
+      "visitedAt": "2026-07-15T12:00:00.000Z",
+      "location": null
     }
   ],
   "total": 1,
@@ -99,7 +102,16 @@ GET /api/crush-date/foods/{id}
   "comment": "想一起去吃！",
   "image": "https://cdn.example.com/foods/food-01.webp",
   "visited": false,
-  "visitedAt": null
+  "visitedAt": null,
+  "location": {
+    "provider": "tencent",
+    "poiId": "poi-001",
+    "title": "阿里郎朝鲜烤肉（某某店）",
+    "address": "北京市朝阳区某某路 1 号",
+    "latitude": 39.9087,
+    "longitude": 116.4598,
+    "adcode": "110105"
+  }
 }
 ```
 
@@ -190,6 +202,90 @@ GET /api/crush-date/place-categories
 
 `filterOnly=true` 表示该值只能用于列表筛选。新增美食或地点时都不能提交 `categoryId=1`。
 
+## 搜索腾讯 POI 候选
+
+前端输入地点关键词时请求后端，由后端调用腾讯位置服务；前端不得直接使用后端 WebService
+Key。用户必须从候选中明确选择一个地点，不能自动选择第一条。
+
+```http
+GET /api/crush-date/map/poi-suggestions?cityCode=beijing&keyword=海底捞
+```
+
+Query 参数均必填：
+
+- `cityCode`：`beijing | tianjin | harbin`。
+- `keyword`：trim 后长度为 2～50 个字符。
+
+后端会把业务城市映射为腾讯搜索区域，并固定使用 `region_fix=1`：
+
+| cityCode | 腾讯搜索区域 | 可接受的 adcode 前缀 |
+| --- | --- | --- |
+| `beijing` | 北京市 | `11` |
+| `tianjin` | 天津市 | `12` |
+| `harbin` | 哈尔滨市 | `2301` |
+
+成功返回最多 10 条完整候选：
+
+```json
+{
+  "list": [
+    {
+      "provider": "tencent",
+      "poiId": "poi-001",
+      "title": "海底捞火锅（国贸店）",
+      "address": "北京市朝阳区建国门外大街 1 号",
+      "latitude": 39.9087,
+      "longitude": 116.4598,
+      "adcode": "110105",
+      "city": "北京市",
+      "district": "朝阳区"
+    }
+  ]
+}
+```
+
+`adcode` 在腾讯响应中可能是数字，后端会统一转换为字符串。前端选择候选后，应原样保存
+`provider`、`poiId`、`title`、`address`、`latitude`、`longitude` 和 `adcode`；`city`、
+`district` 仅用于候选展示，不提交到新增内容接口。
+
+没有候选时返回 `{ "list": [] }`。错误状态：
+
+| HTTP 状态 | 场景 | 前端建议 |
+| --- | --- | --- |
+| `400` | 城市、关键词或额外参数不合法 | 提示用户修改搜索条件 |
+| `429` | 单 IP 一分钟超过 30 次请求 | 停止立即重试，保留输入内容 |
+| `502` | 腾讯返回业务错误，包括 Key 无权限、来源 IP 未授权或配额耗尽 | 提示“位置搜索暂不可用”，允许跳过位置 |
+| `503` | 后端没有配置 WebService Key | 联系后端检查环境变量 |
+| `504` | 后端请求腾讯超过配置的超时时间 | 提供重试和跳过入口 |
+
+后端不会把腾讯原始状态、Key 或上游错误详情返回前端。相同“城市 + trim 后关键词”默认缓存
+10 分钟；前端仍应增加 300～500ms 防抖，避免每次键盘输入都触发搜索。
+
+### 腾讯 WebService Key 配置
+
+该接口使用独立的后端腾讯 WebService Key，不使用前端 H5 地图 Key。开发和部署环境需要配置：
+
+```env
+TENCENT_MAP_WEB_SERVICE_KEY="腾讯 WebService Key"
+TENCENT_MAP_API_BASE_URL="https://apis.map.qq.com"
+TENCENT_MAP_TIMEOUT_MS="5000"
+TENCENT_MAP_CACHE_TTL_SECONDS="600"
+TENCENT_MAP_RATE_LIMIT_WINDOW_MS="60000"
+TENCENT_MAP_RATE_LIMIT_MAX="30"
+```
+
+腾讯控制台配置要求：
+
+- Key 启用产品只需要选择 `WebServiceAPI`。
+- 安全限制使用“授权 IP”，每行填写一个实际调用腾讯接口的公网出口 IPv4。
+- 本地和生产服务器出口 IP 不同时，需要分别加入白名单；不要填写域名、`localhost`、
+  `127.0.0.1`、协议或端口。
+- 腾讯云服务器可通过
+  `curl -sS http://metadata.tencentyun.com/latest/meta-data/public-ipv4` 查询公网 IP。
+- 创建 Key 后还需要在“配额管理 → 账户额度”中给该 Key 分配“关键词输入提示”日调用量和
+  并发额度。腾讯状态 `121` 表示该 Key 当日调用量已达到上限，后端会转换为统一的 `502`。
+- 真实 Key 只写入未提交 Git 的 `.env`，`.env.example` 只保留占位符。
+
 ## 新增美食或地点
 
 该接口无需登录，一次提交文本内容和图片。采用 `multipart/form-data`，图片支持 JPG、PNG 和 WebP，单张最大 5MB。
@@ -208,6 +304,14 @@ Content-Type: multipart/form-data
 - `name`：必填，不能只包含空白字符。
 - `type`：必填，不能只包含空白字符。
 - `comment`：必填，允许空字符串。
+- 位置字段：全部可选；但只要传入一个，就必须完整传入以下七个字段：
+  - `poiProvider`：只能是 `tencent`。
+  - `poiId`：腾讯 POI ID，最大 100 个字符。
+  - `poiTitle`：腾讯标准地点名称，最大 200 个字符。
+  - `poiAddress`：详细地址，最大 500 个字符。
+  - `poiLatitude`：纬度，范围 `-90～90`。
+  - `poiLongitude`：经度，范围 `-180～180`。
+  - `poiAdcode`：行政区划编码，必须与 `cityCode` 对应。
 
 成功时返回 `201 Created`：
 
@@ -222,7 +326,16 @@ Content-Type: multipart/form-data
   "comment": "想一起去感受一下当太阳的感觉！",
   "image": "https://xuxiao-cursh-date-images.oss-cn-beijing.aliyuncs.com/crush-date/foods/2026/07/uuid.webp",
   "visited": false,
-  "visitedAt": null
+  "visitedAt": null,
+  "location": {
+    "provider": "tencent",
+    "poiId": "poi-001",
+    "title": "阿里郎朝鲜烤肉（某某店）",
+    "address": "北京市朝阳区某某路 1 号",
+    "latitude": 39.9087,
+    "longitude": 116.4598,
+    "adcode": "110105"
+  }
 }
 ```
 
@@ -241,8 +354,53 @@ curl -X POST 'http://localhost:3000/api/crush-date/content-items' \
   -F 'categoryId=4' \
   -F 'name=阿里郎朝鲜烤肉' \
   -F 'type=烤肉 · 朝鲜风味' \
-  -F 'comment=想一起去吃！'
+  -F 'comment=想一起去吃！' \
+  -F 'poiProvider=tencent' \
+  -F 'poiId=poi-001' \
+  -F 'poiTitle=阿里郎朝鲜烤肉（某某店）' \
+  -F 'poiAddress=北京市朝阳区某某路 1 号' \
+  -F 'poiLatitude=39.9087' \
+  -F 'poiLongitude=116.4598' \
+  -F 'poiAdcode=110105'
 ```
+
+不需要位置时省略全部七个 `poi*` 字段，成功响应中的 `location` 为 `null`。
+
+## 设置、替换或清除位置
+
+该接口只修改位置，不允许修改名称、分类、图片或其他内容字段。
+
+```http
+PATCH /api/crush-date/content-items/{id}/location
+Content-Type: application/json
+```
+
+设置或替换位置：
+
+```json
+{
+  "location": {
+    "provider": "tencent",
+    "poiId": "poi-001",
+    "title": "海底捞火锅（国贸店）",
+    "address": "北京市朝阳区建国门外大街 1 号",
+    "latitude": 39.9087,
+    "longitude": 116.4598,
+    "adcode": "110105"
+  }
+}
+```
+
+清除位置：
+
+```json
+{
+  "location": null
+}
+```
+
+成功返回 `200 OK` 和更新后的完整内容；`adcode` 与该内容已有 `cityCode` 不匹配时返回
+`400`，内容不存在返回 `404`。旧记录和清除位置后的记录统一返回 `location: null`。
 
 ## 删除美食或地点
 
@@ -292,7 +450,7 @@ curl -i -X DELETE \
   'http://localhost:3000/api/crush-date/content-items/food-550e8400-e29b-41d4-a716-446655440000'
 ```
 
-数据库记录删除成功后，如果 `image` 是本项目 OSS 地址，服务端会尝试同步删除图片。外部图片 URL 不会被删除。当前不提供修改接口。
+数据库记录删除成功后，如果 `image` 是本项目 OSS 地址，服务端会尝试同步删除图片。外部图片 URL 不会被删除。当前只提供 visited 和位置的范围明确修改接口，不提供通用内容修改接口。
 
 ## 标记吃过或去过
 
@@ -332,7 +490,8 @@ Content-Type: application/json
   "comment": "想一起去吃！",
   "image": "https://cdn.example.com/foods/food-01.webp",
   "visited": true,
-  "visitedAt": "2026-07-15T12:00:00.000Z"
+  "visitedAt": "2026-07-15T12:00:00.000Z",
+  "location": null
 }
 ```
 

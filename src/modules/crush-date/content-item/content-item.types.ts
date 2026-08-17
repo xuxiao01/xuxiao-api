@@ -10,6 +10,26 @@ export const contentTypes = ['food', 'place'] as const;
 
 export type ContentType = (typeof contentTypes)[number];
 
+export interface ContentLocation {
+  provider: 'tencent';
+  poiId: string;
+  title: string;
+  address: string;
+  latitude: number;
+  longitude: number;
+  adcode: string;
+}
+
+export interface CreateContentLocationFields {
+  poiProvider?: 'tencent';
+  poiId?: string;
+  poiTitle?: string;
+  poiAddress?: string;
+  poiLatitude?: number;
+  poiLongitude?: number;
+  poiAdcode?: string;
+}
+
 interface CreateContentItemBaseFields {
   cityCode: CityCode;
   name: string;
@@ -17,7 +37,8 @@ interface CreateContentItemBaseFields {
   comment: string;
 }
 
-export type CreateContentItemFields = CreateContentItemBaseFields & (
+export type CreateContentItemFields = CreateContentItemBaseFields
+& CreateContentLocationFields & (
   | { contentType: 'food'; categoryId: FoodCategoryId }
   | { contentType: 'place'; categoryId: PlaceCategoryId }
 );
@@ -38,10 +59,15 @@ export interface ContentItemResponse extends CreateContentItemBaseFields {
   image: string;
   visited: boolean;
   visitedAt: string | null;
+  location: ContentLocation | null;
 }
 
 export interface UpdateVisitedInput {
   visited: boolean;
+}
+
+export interface UpdateLocationInput {
+  location: ContentLocation | null;
 }
 
 export interface ListContentItemsQuery {

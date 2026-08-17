@@ -41,6 +41,13 @@ const item = {
   type: '铜锅涮肉',
   comment: '想吃牛肉',
   image: 'https://example.com/food.webp',
+  poiProvider: null,
+  poiId: null,
+  poiTitle: null,
+  poiAddress: null,
+  poiLatitude: null,
+  poiLongitude: null,
+  poiAdcode: null,
   visited: false,
   visitedAt: null,
   createdAt: new Date('2026-08-14T08:00:00.000Z'),
@@ -239,6 +246,61 @@ describe('create and detail', () => {
       }),
     });
     expect(result.categoryId).toBe('3');
+    expect(result.location).toBeNull();
+  });
+
+  it('新增内容保存并返回完整腾讯位置', async () => {
+    const locationItem = {
+      ...item,
+      poiProvider: 'tencent',
+      poiId: 'poi-001',
+      poiTitle: '海底捞火锅（国贸店）',
+      poiAddress: '北京市朝阳区建国门外大街 1 号',
+      poiLatitude: 39.9087,
+      poiLongitude: 116.4598,
+      poiAdcode: '110105',
+    };
+    mocks.uploadImage.mockResolvedValue({
+      url: item.image,
+      objectKey: 'crush-date/foods/image.webp',
+    });
+    mocks.prisma.crushDateContentItem.create.mockResolvedValue(locationItem);
+
+    const result = await contentItemService.createWithImage({
+      contentType: 'food',
+      cityCode: 'beijing',
+      categoryId: '3',
+      name: item.name,
+      type: item.type,
+      comment: item.comment,
+      buffer: Buffer.from('image'),
+      mimeType: 'image/webp',
+      poiProvider: 'tencent',
+      poiId: 'poi-001',
+      poiTitle: '海底捞火锅（国贸店）',
+      poiAddress: '北京市朝阳区建国门外大街 1 号',
+      poiLatitude: 39.9087,
+      poiLongitude: 116.4598,
+      poiAdcode: '110105',
+    });
+
+    expect(mocks.prisma.crushDateContentItem.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        poiProvider: 'tencent',
+        poiId: 'poi-001',
+        poiLatitude: 39.9087,
+        poiLongitude: 116.4598,
+      }),
+    });
+    expect(result.location).toEqual({
+      provider: 'tencent',
+      poiId: 'poi-001',
+      title: '海底捞火锅（国贸店）',
+      address: '北京市朝阳区建国门外大街 1 号',
+      latitude: 39.9087,
+      longitude: 116.4598,
+      adcode: '110105',
+    });
   });
 
   it('详情只查询 food 类型', async () => {
@@ -318,6 +380,81 @@ describe('create and detail', () => {
         categoryId: '3',
       }),
     });
+  });
+});
+
+describe('update location', () => {
+  const location = {
+    provider: 'tencent' as const,
+    poiId: 'poi-001',
+    title: '中央大街',
+    address: '黑龙江省哈尔滨市道里区中央大街',
+    latitude: 45.771,
+    longitude: 126.616,
+    adcode: '230102',
+  };
+
+  it('按内容城市校验并设置位置', async () => {
+    const harbinItem = { ...placeItem, cityCode: 'harbin' };
+    mocks.prisma.crushDateContentItem.findUnique
+      .mockResolvedValueOnce(harbinItem)
+      .mockResolvedValueOnce({
+        ...harbinItem,
+        poiProvider: location.provider,
+        poiId: location.poiId,
+        poiTitle: location.title,
+        poiAddress: location.address,
+        poiLatitude: location.latitude,
+        poiLongitude: location.longitude,
+        poiAdcode: location.adcode,
+      });
+    mocks.prisma.crushDateContentItem.updateMany.mockResolvedValue({ count: 1 });
+
+    const result = await contentItemService.updateLocation(placeItem.id, { location });
+
+    expect(mocks.prisma.crushDateContentItem.updateMany).toHaveBeenCalledWith({
+      where: { id: placeItem.id },
+      data: expect.objectContaining({
+        poiProvider: 'tencent',
+        poiAdcode: '230102',
+      }),
+    });
+    expect(result.location).toEqual(location);
+  });
+
+  it('清除全部位置字段', async () => {
+    mocks.prisma.crushDateContentItem.findUnique
+      .mockResolvedValueOnce(item)
+      .mockResolvedValueOnce(item);
+    mocks.prisma.crushDateContentItem.updateMany.mockResolvedValue({ count: 1 });
+
+    await expect(contentItemService.updateLocation(item.id, {
+      location: null,
+    })).resolves.toMatchObject({ location: null });
+    expect(mocks.prisma.crushDateContentItem.updateMany).toHaveBeenCalledWith({
+      where: { id: item.id },
+      data: {
+        poiProvider: null,
+        poiId: null,
+        poiTitle: null,
+        poiAddress: null,
+        poiLatitude: null,
+        poiLongitude: null,
+        poiAdcode: null,
+      },
+    });
+  });
+
+  it('拒绝与内容城市不匹配的位置并处理不存在记录', async () => {
+    mocks.prisma.crushDateContentItem.findUnique.mockResolvedValueOnce(item);
+    await expect(contentItemService.updateLocation(item.id, {
+      location,
+    })).rejects.toMatchObject({ statusCode: 400 });
+
+    mocks.prisma.crushDateContentItem.findUnique.mockResolvedValueOnce(null);
+    await expect(contentItemService.updateLocation('missing', {
+      location: null,
+    })).rejects.toMatchObject({ statusCode: 404 });
   });
 });
 

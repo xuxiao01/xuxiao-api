@@ -95,18 +95,25 @@ model WeeklyReportItem {
 }
 
 model CrushDateContentItem {
-  id          String               @id
-  contentType CrushDateContentType @map("content_type")
-  cityCode    String               @default("beijing") @map("city_code")
-  categoryId  String               @default("other") @map("category_id")
-  name        String
-  type        String
-  comment     String
-  image       String
-  visited     Boolean              @default(false)
-  visitedAt   DateTime?            @map("visited_at")
-  createdAt   DateTime             @default(now()) @map("created_at")
-  updatedAt   DateTime             @updatedAt @map("updated_at")
+  id           String               @id
+  contentType  CrushDateContentType @map("content_type")
+  cityCode     String               @default("beijing") @map("city_code")
+  categoryId   String               @default("other") @map("category_id")
+  name         String
+  type         String
+  comment      String
+  image        String
+  poiProvider  String?              @map("poi_provider")
+  poiId        String?              @map("poi_id")
+  poiTitle     String?              @map("poi_title")
+  poiAddress   String?              @map("poi_address")
+  poiLatitude  Decimal?             @map("poi_latitude") @db.Decimal(9, 6)
+  poiLongitude Decimal?             @map("poi_longitude") @db.Decimal(10, 6)
+  poiAdcode    String?              @map("poi_adcode")
+  visited      Boolean              @default(false)
+  visitedAt    DateTime?            @map("visited_at")
+  createdAt    DateTime             @default(now()) @map("created_at")
+  updatedAt    DateTime             @updatedAt @map("updated_at")
 
   @@index([contentType, createdAt(sort: Desc)])
   @@index([contentType, cityCode, visited, createdAt(sort: Desc), id(sort: Desc)])
@@ -114,21 +121,21 @@ model CrushDateContentItem {
 }
 
 model CrushDatePlan {
-  id               String                @id
-  title            String
-  status           CrushDatePlanStatus
-  date             DateTime?             @db.Date
-  scenario         CrushDatePlanScenario
-  scenarioText     String                @map("scenario_text")
-  note             String
-  sourceBackupId   String?               @map("source_backup_id")
-  completedAt      DateTime?             @map("completed_at")
-  createdAt        DateTime              @default(now()) @map("created_at")
-  updatedAt        DateTime              @updatedAt @map("updated_at")
-  sourceBackup     CrushDatePlan?        @relation("CrushDateBackupActivations", fields: [sourceBackupId], references: [id], onDelete: SetNull)
-  activatedPlans   CrushDatePlan[]       @relation("CrushDateBackupActivations")
-  items            CrushDatePlanItem[]
-  photos           CrushDatePlanPhoto[]
+  id             String                @id
+  title          String
+  status         CrushDatePlanStatus
+  date           DateTime?             @db.Date
+  scenario       CrushDatePlanScenario
+  scenarioText   String                @map("scenario_text")
+  note           String
+  sourceBackupId String?               @map("source_backup_id")
+  completedAt    DateTime?             @map("completed_at")
+  createdAt      DateTime              @default(now()) @map("created_at")
+  updatedAt      DateTime              @updatedAt @map("updated_at")
+  sourceBackup   CrushDatePlan?        @relation("CrushDateBackupActivations", fields: [sourceBackupId], references: [id], onDelete: SetNull)
+  activatedPlans CrushDatePlan[]       @relation("CrushDateBackupActivations")
+  items          CrushDatePlanItem[]
+  photos         CrushDatePlanPhoto[]
 
   @@index([status, createdAt(sort: Desc)])
   @@index([completedAt(sort: Desc)])
@@ -137,16 +144,16 @@ model CrushDatePlan {
 }
 
 model CrushDatePlanItem {
-  id        String               @id
-  planId    String               @map("plan_id")
-  type      CrushDateContentType
-  sourceId  String               @map("source_id")
-  title     String
-  image     String
-  period    CrushDatePlanPeriod
-  note      String
-  order     Int                  @map("sort_order")
-  plan      CrushDatePlan        @relation(fields: [planId], references: [id], onDelete: Cascade)
+  id       String               @id
+  planId   String               @map("plan_id")
+  type     CrushDateContentType
+  sourceId String               @map("source_id")
+  title    String
+  image    String
+  period   CrushDatePlanPeriod
+  note     String
+  order    Int                  @map("sort_order")
+  plan     CrushDatePlan        @relation(fields: [planId], references: [id], onDelete: Cascade)
 
   @@unique([planId, sourceId])
   @@index([planId, period, order])
