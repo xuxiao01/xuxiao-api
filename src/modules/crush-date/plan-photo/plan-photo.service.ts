@@ -14,7 +14,7 @@ import type {
   ReorderPlanPhotosInput,
 } from './plan-photo.types';
 
-const MAX_PLAN_PHOTOS = 9;
+const MAX_PLAN_PHOTOS = 30;
 
 function toPlanPhotoResponse(photo: CrushDatePlanPhoto): PlanPhotoResponse {
   return {
@@ -81,7 +81,7 @@ export async function create(
     throw new AppError(409, '只有过去的计划可以上传照片');
   }
   if (plan._count.photos >= MAX_PLAN_PHOTOS) {
-    throw new AppError(409, '每个计划最多上传 9 张照片');
+    throw new AppError(409, `每个计划最多上传 ${MAX_PLAN_PHOTOS} 张照片`);
   }
 
   const photoId = `photo-${randomUUID()}`;
@@ -100,7 +100,7 @@ export async function create(
         where: { planId },
       });
       if (count >= MAX_PLAN_PHOTOS) {
-        throw new AppError(409, '每个计划最多上传 9 张照片');
+        throw new AppError(409, `每个计划最多上传 ${MAX_PLAN_PHOTOS} 张照片`);
       }
 
       const aggregate = await transaction.crushDatePlanPhoto.aggregate({

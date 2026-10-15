@@ -196,3 +196,47 @@ describe('content item list query schemas', () => {
     expect(listPlacesQuerySchema.safeParse({ categoryId: 'other' }).success).toBe(false);
   });
 });
+
+describe('宁夏新增城市', () => {
+  it.each([
+    ['yinchuan', '640104', '640502'],
+    ['zhongwei', '640502', '640302'],
+    ['wuzhong', '640302', '640104'],
+  ])('%s 支持新增、列表筛选并校验地点所属城市', (cityCode, adcode, otherAdcode) => {
+    for (const contentType of ['food', 'place']) {
+      const input = {
+        contentType,
+        cityCode,
+        name: '测试地点',
+        type: '测试类型',
+        comment: '测试备注',
+      };
+      expect(createContentItemSchema.safeParse(input).success).toBe(true);
+
+      const locationInput = {
+        ...input,
+        poiProvider: 'tencent',
+        poiId: 'test-poi',
+        poiTitle: '测试地点',
+        poiAddress: '测试地址',
+        poiLatitude: '37.5',
+        poiLongitude: '106.0',
+        poiAdcode: adcode,
+      };
+      expect(createContentItemSchema.safeParse(locationInput).success).toBe(true);
+      expect(createContentItemSchema.safeParse({
+        ...locationInput,
+        poiAdcode: otherAdcode,
+      }).success).toBe(false);
+    }
+
+    for (const schema of [listFoodsQuerySchema, listPlacesQuerySchema]) {
+      expect(schema.parse({
+        cityCode,
+        visited: 'false',
+        categoryId: '2',
+        keyword: '公园',
+      })).toMatchObject({ cityCode, visited: false, categoryId: '2', keyword: '公园' });
+    }
+  });
+});

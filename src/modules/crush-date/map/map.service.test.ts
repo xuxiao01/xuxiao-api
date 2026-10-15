@@ -59,6 +59,18 @@ describe('listPoiSuggestions', () => {
     });
   });
 
+  it.each([
+    ['yinchuan', '银川市'],
+    ['zhongwei', '中卫市'],
+    ['wuzhong', '吴忠市'],
+  ] as const)('%s 使用对应的腾讯地图搜索区域', async (cityCode, region) => {
+    mocks.requestTencentPoiSuggestions.mockResolvedValue([]);
+
+    await listPoiSuggestions({ cityCode, keyword: '公园' });
+
+    expect(mocks.requestTencentPoiSuggestions).toHaveBeenCalledWith(region, '公园');
+  });
+
   it('相同城市和标准化关键词命中缓存', async () => {
     mocks.requestTencentPoiSuggestions.mockResolvedValue([]);
 

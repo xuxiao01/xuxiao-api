@@ -459,11 +459,14 @@ describe('update location', () => {
 });
 
 describe('configuration dictionaries', () => {
-  it('返回三个城市、九个美食筛选项和七个地点筛选项', () => {
+  it('返回六个城市、九个美食筛选项和七个地点筛选项', () => {
     expect(contentItemService.listCities().list.map(({ code }) => code)).toEqual([
       'beijing',
       'tianjin',
       'harbin',
+      'yinchuan',
+      'zhongwei',
+      'wuzhong',
     ]);
     expect(contentItemService.listFoodCategories().list).toEqual([
       { id: '1', name: '全部分类', sortOrder: 0, filterOnly: true },

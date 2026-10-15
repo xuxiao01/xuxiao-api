@@ -97,17 +97,17 @@ beforeEach(() => {
 });
 
 describe('create', () => {
-  it('为 completed 计划上传照片并自动追加顺序', async () => {
+  it.each([1, 29])('已有 %i 张照片时允许上传并自动追加顺序', async (count) => {
     mocks.rootPlan.findUnique.mockResolvedValue({
       status: CrushDatePlanStatus.COMPLETED,
-      _count: { photos: 1 },
+      _count: { photos: count },
     });
     mocks.transactionPlan.findUnique.mockResolvedValue({
       status: CrushDatePlanStatus.COMPLETED,
     });
-    mocks.transactionPhoto.count.mockResolvedValue(1);
+    mocks.transactionPhoto.count.mockResolvedValue(count);
     mocks.transactionPhoto.aggregate.mockResolvedValue({
-      _max: { sortOrder: 0 },
+      _max: { sortOrder: count - 1 },
     });
     mocks.transactionPhoto.create.mockImplementation(async ({ data }) => ({
       ...data,
@@ -131,13 +131,13 @@ describe('create', () => {
         id: expect.stringMatching(/^photo-/),
         planId,
         objectKey: expect.stringMatching(/\.jpg$/),
-        sortOrder: 1,
+        sortOrder: count,
       },
     });
     expect(result).toMatchObject({
       id: expect.stringMatching(/^photo-/),
       url: expect.stringContaining(`crush-date/plan-photos/${planId}/photo-`),
-      sortOrder: 1,
+      sortOrder: count,
       createdAt: createdAt.toISOString(),
     });
   });
@@ -158,10 +158,10 @@ describe('create', () => {
     expect(mocks.uploadImageAtPath).not.toHaveBeenCalled();
   });
 
-  it('达到 9 张上限时不能继续上传', async () => {
+  it('达到 30 张上限时不能继续上传', async () => {
     mocks.rootPlan.findUnique.mockResolvedValue({
       status: CrushDatePlanStatus.COMPLETED,
-      _count: { photos: 9 },
+      _count: { photos: 30 },
     });
 
     await expect(planPhotoService.create(planId, {
@@ -169,27 +169,27 @@ describe('create', () => {
       mimeType: 'image/jpeg',
     })).rejects.toMatchObject({
       statusCode: 409,
-      message: '每个计划最多上传 9 张照片',
+      message: '每个计划最多上传 30 张照片',
     });
     expect(mocks.uploadImageAtPath).not.toHaveBeenCalled();
   });
 
-  it('并发复查发现已满 9 张时清理刚上传的 OSS 文件', async () => {
+  it('并发复查发现已满 30 张时清理刚上传的 OSS 文件', async () => {
     mocks.rootPlan.findUnique.mockResolvedValue({
       status: CrushDatePlanStatus.COMPLETED,
-      _count: { photos: 8 },
+      _count: { photos: 29 },
     });
     mocks.transactionPlan.findUnique.mockResolvedValue({
       status: CrushDatePlanStatus.COMPLETED,
     });
-    mocks.transactionPhoto.count.mockResolvedValue(9);
+    mocks.transactionPhoto.count.mockResolvedValue(30);
 
     await expect(planPhotoService.create(planId, {
       buffer: Buffer.from('image'),
       mimeType: 'image/jpeg',
     })).rejects.toMatchObject({
       statusCode: 409,
-      message: '每个计划最多上传 9 张照片',
+      message: '每个计划最多上传 30 张照片',
     });
     expect(mocks.deleteImage).toHaveBeenCalledWith(
       expect.stringContaining(`crush-date/plan-photos/${planId}/photo-`),
@@ -306,6 +306,14 @@ describe('reorder', () => {
 });
 
 describe('reorderPlanPhotosSchema', () => {
+  it('接受 30 张照片的排序并拒绝 31 张', () => {
+    const photoIds = Array.from({ length: 30 }, (_, index) => `photo-${index}`);
+    expect(reorderPlanPhotosSchema.safeParse({ photoIds }).success).toBe(true);
+    expect(reorderPlanPhotosSchema.safeParse({
+      photoIds: [...photoIds, 'photo-30'],
+    }).success).toBe(false);
+  });
+
   it('拒绝重复照片 ID', () => {
     const result = reorderPlanPhotosSchema.safeParse({
       photoIds: ['photo-1', 'photo-1'],

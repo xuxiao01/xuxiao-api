@@ -13,7 +13,7 @@ export const reorderPlanPhotosSchema = z
   .object({
     photoIds: z
       .array(z.string().trim().min(1, 'photoId 不能为空'))
-      .max(9, '照片数量不能超过 9 张'),
+      .max(30, '照片数量不能超过 30 张'),
   })
   .strict()
   .superRefine((input, context) => {

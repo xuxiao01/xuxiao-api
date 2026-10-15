@@ -2,6 +2,9 @@ export const cities = [
   { code: 'beijing', name: '北京', enabled: true, sortOrder: 0 },
   { code: 'tianjin', name: '天津', enabled: true, sortOrder: 1 },
   { code: 'harbin', name: '哈尔滨', enabled: true, sortOrder: 2 },
+  { code: 'yinchuan', name: '银川', enabled: true, sortOrder: 3 },
+  { code: 'zhongwei', name: '中卫', enabled: true, sortOrder: 4 },
+  { code: 'wuzhong', name: '吴忠', enabled: true, sortOrder: 5 },
 ] as const;
 
 export const foodCategories = [
@@ -63,10 +66,16 @@ export const cityTencentRegions: Record<CityCode, string> = {
   beijing: '北京市',
   tianjin: '天津市',
   harbin: '哈尔滨市',
+  yinchuan: '银川市',
+  zhongwei: '中卫市',
+  wuzhong: '吴忠市',
 };
 
 export const cityAdcodePrefixes: Record<CityCode, string> = {
   beijing: '11',
   tianjin: '12',
   harbin: '2301',
+  yinchuan: '6401',
+  zhongwei: '6405',
+  wuzhong: '6403',
 };

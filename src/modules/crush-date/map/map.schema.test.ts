@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { poiSuggestionsQuerySchema } from './map.schema';
 
 describe('poiSuggestionsQuerySchema', () => {
-  it('去除关键词空白并接受三个城市', () => {
-    for (const cityCode of ['beijing', 'tianjin', 'harbin']) {
+  it('去除关键词空白并接受六个城市', () => {
+    for (const cityCode of ['beijing', 'tianjin', 'harbin', 'yinchuan', 'zhongwei', 'wuzhong']) {
       expect(poiSuggestionsQuerySchema.parse({
         cityCode,
         keyword: '  海底捞  ',
