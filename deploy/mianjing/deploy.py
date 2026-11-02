@@ -54,6 +54,17 @@ def ready(origin,sha):
     request(origin+'/api/mianjing/company-catalog',token=guest)
 
 
+def wait_ready(origin, sha, attempts=30):
+    for attempt in range(attempts):
+        try:
+            ready(origin, sha)
+            return
+        except Exception:
+            if attempt == attempts - 1:
+                raise
+            time.sleep(1)
+
+
 def switch(target):
     link=ROOT/'.current-next'
     link.unlink(missing_ok=True)
@@ -104,13 +115,7 @@ def deploy(sha,upload,expected):
         latest(sha)
         switch(release)
         run(['systemctl','restart','mianjing-api.service'])
-        for attempt in range(30):
-            try:
-                ready('http://127.0.0.1:3301',sha)
-                break
-            except Exception:
-                if attempt==29:raise
-                time.sleep(1)
+        wait_ready('http://127.0.0.1:3301',sha)
         config=(release/'deploy/mianjing/nginx.conf').read_bytes()
         include_line='    include '+str(INCLUDE)+';'
         text=old_site.decode()
@@ -125,7 +130,7 @@ def deploy(sha,upload,expected):
                 SITE.write_text(text[:pos]+include_line+'\n'+text[pos:])
             run([str(NGINX),'-t'])
             run([str(NGINX),'-s','reload'])
-        ready(URL,sha)
+        wait_ready(URL,sha)
         if processes()!=baseline:raise RuntimeError('Existing process changed during release')
         if hashlib.sha256(SHARED_ENV.read_bytes()).hexdigest()!=env_digest:raise RuntimeError('Shared environment changed')
         run(['systemctl','enable','mianjing-api.service'])
