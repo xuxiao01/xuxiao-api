@@ -77,3 +77,11 @@ class ReadinessTests(unittest.TestCase):
         with patch.object(deploy,'ready',side_effect=RuntimeError('wrong commit')) as ready,patch.object(deploy.time,'sleep'):
             with self.assertRaises(RuntimeError):deploy.wait_ready('https://example.test','a'*40,attempts=3)
             self.assertEqual(ready.call_count,3)
+
+
+class EnvironmentTests(unittest.TestCase):
+    def test_dotenv_roundtrip(self):
+        import subprocess
+        from pathlib import Path
+        result=subprocess.run(['node','--test',str(Path(__file__).with_name('env.test.cjs'))],capture_output=True,text=True)
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
