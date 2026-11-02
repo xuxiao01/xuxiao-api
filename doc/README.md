@@ -4,5 +4,6 @@
 
 - [`weekly-lab/`](./weekly-lab/)：Weekly Lab 周报项目文档
 - [`crush-date/`](./crush-date/)：Crush Date 项目文档
+- [`mianjing/`](./mianjing/)：面经台题库、公司配置和出现记录接口
 
 新增文档时放入对应模块目录。接口说明使用 `api.md`，开发设计放入模块的 `dev/` 目录。

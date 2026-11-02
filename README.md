@@ -159,6 +159,8 @@ pnpm dev:crush-date
 
 `APP_MODULES` 支持以逗号分隔模块名；不配置或设置为 `all` 时加载全部模块。
 
+面经台模块可使用 `pnpm dev:mianjing` 单独启动，复用现有账号；超级管理员通过 `MIANJING_ADMIN_USER_ID` 指定，未配置时禁止账号进入。游客使用独立 `MIANJING_GUEST_JWT_SECRET` 签发一小时只读 Token。接口、三张表模型和测试说明见 [面经台文档](doc/mianjing/README.md)。迁移文件已准备，前端接入在功能分支本地联调，生产迁移和部署需后续执行。
+
 ### 6. 生产构建与启动
 
 ```bash
@@ -175,6 +177,7 @@ pnpm start
 | `DATABASE_URL` | PostgreSQL 连接字符串 | `postgresql://postgres:postgres@localhost:5432/xuxiao_api?schema=public` |
 | `JWT_SECRET` | JWT 签名密钥（请使用强随机字符串） | `please_change_me` |
 | `JWT_EXPIRES_IN` | Token 过期时间 | `7d` |
+| `MIANJING_ADMIN_USER_ID` | 面经台唯一管理员的现有账号 ID；本次为 2 | `2` |
 
 > `.env` 包含敏感信息，请勿提交到 Git。生产环境请重新生成 `JWT_SECRET`。
 

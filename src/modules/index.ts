@@ -2,6 +2,10 @@ import type { Express } from 'express';
 import type { ApiModule } from './module';
 
 const moduleLoaders: Record<string, () => ApiModule> = {
+  mianjing: () => {
+    const { mianjingModule } = require('./mianjing/mianjing.module');
+    return mianjingModule;
+  },
   'crush-date': () => {
     const { crushDateModule } = require('./crush-date/crush-date.module');
     return crushDateModule;
@@ -35,6 +39,12 @@ function getEnabledModuleNames(): string[] {
 
 export function registerModules(app: Express): string[] {
   const moduleNames = getEnabledModuleNames();
+
+  // Reuse the same account endpoints when running mianjing without weekly-lab.
+  if (moduleNames.includes('mianjing') && !moduleNames.includes('weekly-lab')) {
+    const authRoutes = require('./weekly-lab/auth/auth.routes').default;
+    app.use('/api/auth', authRoutes);
+  }
 
   for (const moduleName of moduleNames) {
     moduleLoaders[moduleName]().register(app);
