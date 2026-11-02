@@ -1,0 +1,21 @@
+[Unit]
+Description=Mianjing isolated API
+After=network.target
+
+[Service]
+Type=simple
+User=mianjing-api
+Group=mianjing-api
+WorkingDirectory=/www/wwwroot/mianjing-api/current
+ExecStart=/usr/bin/node deploy/mianjing/start.cjs
+Environment=NODE_ENV=production
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=20
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target
