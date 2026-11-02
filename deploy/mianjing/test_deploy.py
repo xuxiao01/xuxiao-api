@@ -53,10 +53,27 @@ class ArtifactTests(unittest.TestCase):
                     data=content.encode();info=tarfile.TarInfo(name);info.size=len(data);tar.addfile(info,io.BytesIO(data))
             def ready(origin,_sha):
                 if origin.startswith('https'):raise RuntimeError('simulated external failure')
-            with patch.multiple(deploy,ROOT=root,BACKUPS=root/'backups',SITE=site,INCLUDE=include,SHARED_ENV=shared),patch.object(deploy,'latest'),patch.object(deploy,'processes',return_value={'xuxiao-api':1,'script-hub':2}),patch.object(deploy,'run') as run,patch.object(deploy,'ready',side_effect=ready),patch.object(deploy.shutil,'chown'):
+            with patch.multiple(deploy,ROOT=root,BACKUPS=root/'backups',SITE=site,INCLUDE=include,SHARED_ENV=shared),patch.object(deploy,'latest'),patch.object(deploy,'processes',return_value={'xuxiao-api':1,'script-hub':2}),patch.object(deploy,'run') as run,patch.object(deploy,'ready',side_effect=ready),patch.object(deploy.shutil,'chown'),patch.object(deploy.time,'sleep'):
                 with self.assertRaises(RuntimeError):deploy.deploy(sha,upload,hashlib.sha256(artifact.read_bytes()).hexdigest())
                 self.assertEqual((root/'current').resolve(),(root/'releases/previous').resolve())
                 commands=[call.args[0] for call in run.call_args_list]
                 self.assertIn(['systemctl','restart','mianjing-api.service'],commands)
                 self.assertFalse(any('pm2' in str(command) or 'xuxiao-api.service' in command for command in commands))
                 self.assertEqual(shared.read_text(),'untouched')
+
+
+class ReadinessTests(unittest.TestCase):
+    def test_reload_window_retries_without_skipping_contract_validation(self):
+        from unittest.mock import patch
+        import deploy
+        with patch.object(deploy,'ready',side_effect=[RuntimeError('404 during reload'),RuntimeError('502 during reload'),None]) as ready,patch.object(deploy.time,'sleep') as sleep:
+            deploy.wait_ready('https://example.test','a'*40)
+            self.assertEqual(ready.call_count,3)
+            self.assertEqual(sleep.call_count,2)
+
+    def test_persistent_failure_still_aborts(self):
+        from unittest.mock import patch
+        import deploy
+        with patch.object(deploy,'ready',side_effect=RuntimeError('wrong commit')) as ready,patch.object(deploy.time,'sleep'):
+            with self.assertRaises(RuntimeError):deploy.wait_ready('https://example.test','a'*40,attempts=3)
+            self.assertEqual(ready.call_count,3)
