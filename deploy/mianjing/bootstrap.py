@@ -20,12 +20,13 @@ if not (ROOT/'shared/.env').exists():
     script=r'''
 const fs=require('node:fs'),crypto=require('node:crypto');
 const dotenv=require('/www/wwwroot/xuxiao-api/node_modules/dotenv');
+const {serializeEnvironment}=require(process.argv[1]);
 const source=dotenv.parse(fs.readFileSync('/www/wwwroot/xuxiao-api/.env'));
 if(!source.DATABASE_URL || !source.JWT_SECRET)throw new Error('Existing authentication configuration missing');
 const env={DATABASE_URL:source.DATABASE_URL,JWT_SECRET:source.JWT_SECRET,JWT_EXPIRES_IN:source.JWT_EXPIRES_IN||'7d',MIANJING_ADMIN_USER_ID:'2',MIANJING_GUEST_JWT_SECRET:crypto.randomBytes(48).toString('base64url'),PORT:'3301',APP_MODULES:'mianjing'};
-fs.writeFileSync('/www/wwwroot/mianjing-api/shared/.env',Object.entries(env).map(([k,v])=>k+'='+JSON.stringify(v)).join('\n')+'\n',{mode:0o640,flag:'wx'});
+fs.writeFileSync('/www/wwwroot/mianjing-api/shared/.env',serializeEnvironment(env,dotenv.parse),{mode:0o640,flag:'wx'});
 '''
-    subprocess.run(['/usr/bin/node','-e',script],check=True)
+    subprocess.run(['/usr/bin/node','-e',script,str(Path(__file__).with_name('env.cjs').resolve())],check=True)
     shutil.chown(ROOT/'shared/.env',user='root',group='mianjing-api')
     (ROOT/'shared/.env').chmod(0o640)
 unit=Path('/etc/systemd/system/mianjing-api.service')
