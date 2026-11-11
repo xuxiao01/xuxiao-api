@@ -278,6 +278,7 @@ model PrChangeLog {
   filesComplete        Boolean           @map("files_complete")
   changeType           String            @default("unknown") @map("change_type")
   changeSummary        String?           @map("change_summary")
+  review               Json?
   analysisStatus       String            @default("pending") @map("analysis_status")
   analysisPartial      Boolean           @default(false) @map("analysis_partial")
   contentHash          String            @map("content_hash")

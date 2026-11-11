@@ -24,5 +24,6 @@ export async function ingest(req: Request, res: Response) {
 }
 
 export async function reanalyze(req: Request, res: Response) {
-  res.status(202).json(success(await service.reanalyze(idSchema.parse(req.params.id))));
+  idSchema.parse(req.params.id);
+  throw new AppError(410, '已改为接收 PR-Agent 审查结果，请在 GitHub 更新或重新审查 PR');
 }

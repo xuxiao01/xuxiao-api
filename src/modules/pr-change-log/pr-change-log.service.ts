@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import type { Prisma, PrismaClient, PrChangeLog } from '../../generated/client';
+import { Prisma, type PrismaClient } from '../../generated/client';
 import { prisma } from '../../lib/prisma';
 import { AppError } from '../../utils/app-error';
 import { cursorSchema, type IngestInput, type ListQuery } from './pr-change-log.schema';
@@ -17,20 +17,26 @@ export function contentHash(input: IngestInput): string {
 export async function ingest(input: IngestInput, db: PrismaClient = prisma) {
   const hash = contentHash(input);
   const run = BigInt(input.sourceRunNumber);
+  // Previously persisted hashes predate these three optional result fields.
+  const { review: _review, changeType: _type, changeSummary: _summary, ...legacyContent } = normalizeContent(input);
+  const legacyHash = input.review === null && input.changeType === 'unknown' && input.changeSummary === null
+    ? createHash('sha256').update(JSON.stringify(legacyContent)).digest('hex') : null;
   return db.$transaction(async (tx) => {
     // Also serializes simultaneous first inserts, when no PR row exists yet.
     await tx.$queryRaw`SELECT 1 FROM pg_advisory_xact_lock(hashtextextended(${`${input.repository}:${input.number}`}, 0))`;
     const existing = await tx.prChangeLog.findUnique({
       where: { repository_prNumber: { repository: input.repository, prNumber: input.number } },
+      select: { id: true, sourceRunNumber: true, sourceRunAttempt: true, contentHash: true },
     });
     if (existing) {
+      const sameContent = hash === existing.contentHash || legacyHash === existing.contentHash;
       const older = run < existing.sourceRunNumber || (run === existing.sourceRunNumber && input.sourceRunAttempt < existing.sourceRunAttempt);
       if (older) return { id: existing.id, status: 'ignored_stale' };
       if (run === existing.sourceRunNumber && input.sourceRunAttempt === existing.sourceRunAttempt) {
-        if (hash !== existing.contentHash) throw new AppError(409, '同一上报版本的内容不一致');
+        if (!sameContent) throw new AppError(409, '同一上报版本的内容不一致');
         return { id: existing.id, status: 'unchanged' };
       }
-      if (hash === existing.contentHash) {
+      if (sameContent) {
         await tx.prChangeLog.update({ where: { id: existing.id }, data: {
           sourceRunNumber: run, sourceRunAttempt: input.sourceRunAttempt,
         } });
@@ -42,12 +48,12 @@ export async function ingest(input: IngestInput, db: PrismaClient = prisma) {
       author: input.author, url: input.url, prCreatedAt: new Date(input.createdAt),
       headSha: input.headSha, fileCount: input.fileCount, filesComplete: input.filesComplete,
       contentHash: hash, sourceRunNumber: run, sourceRunAttempt: input.sourceRunAttempt,
-      changeType: 'unknown', changeSummary: null, analysisStatus: 'pending',
-      analysisPartial: false, analysisAttempts: 0,
+      changeType: input.changeType, changeSummary: input.changeSummary,
+      review: input.review === null ? Prisma.JsonNull : input.review,
     };
     const record = existing
-      ? await tx.prChangeLog.update({ where: { id: existing.id }, data })
-      : await tx.prChangeLog.create({ data });
+      ? await tx.prChangeLog.update({ where: { id: existing.id }, data, select: { id: true } })
+      : await tx.prChangeLog.create({ data, select: { id: true } });
     await tx.prChangeLogFile.deleteMany({ where: { prId: record.id } });
     if (input.files.length) {
       await tx.prChangeLogFile.createMany({ data: input.files.map((file) => ({ ...file, prId: record.id })) });
@@ -97,53 +103,8 @@ export async function listRecords(query: ListQuery, db: PrismaClient = prisma) {
 
 export async function getRecord(id: string, db: PrismaClient = prisma) {
   const record = await db.$transaction((tx) => tx.prChangeLog.findUnique({
-    where: { id }, select: { ...listSelect, files: { orderBy: { path: 'asc' } } },
+    where: { id }, select: { ...listSelect, review: true, files: { orderBy: { path: 'asc' } } },
   }), { isolationLevel: 'RepeatableRead' });
   if (!record) throw new AppError(404, 'PR 记录不存在');
-  return { ...recordDto(record), files: record.files.map(fileDto) };
-}
-
-export async function reanalyze(id: string, db: PrismaClient = prisma) {
-  const result = await db.prChangeLog.updateMany({
-    where: { id, analysisStatus: { in: ['succeeded', 'failed'] } },
-    data: { analysisStatus: 'pending', analysisAttempts: 0, changeType: 'unknown', changeSummary: null, analysisPartial: false },
-  });
-  if (!result.count) {
-    if (!await db.prChangeLog.findUnique({ where: { id }, select: { id: true } })) throw new AppError(404, 'PR 记录不存在');
-    throw new AppError(409, '该记录已在分析队列中');
-  }
-  return { id, analysisStatus: 'pending' };
-}
-
-export const ANALYSIS_LEASE_MS = 180_000;
-
-export async function claimAnalysis(db: PrismaClient = prisma, now = new Date()) {
-  return db.$transaction(async (tx) => {
-    const candidates = await tx.$queryRaw<{ id: string }[]>`
-      SELECT id FROM pr_change_logs
-      WHERE analysis_status = 'pending'
-         OR (analysis_status = 'processing' AND analysis_started_at < ${new Date(now.getTime() - ANALYSIS_LEASE_MS)})
-      ORDER BY updated_at, id LIMIT 1 FOR UPDATE SKIP LOCKED`;
-    if (!candidates.length) return null;
-    const current = await tx.prChangeLog.findUniqueOrThrow({ where: { id: candidates[0]!.id } });
-    if (current.analysisAttempts >= 2) {
-      await tx.prChangeLog.update({ where: { id: current.id }, data: { analysisStatus: 'failed' } });
-      return { exhausted: true as const };
-    }
-    // This monotonic timestamp is the lease identity; never reset it on requeue.
-    const startedAt = new Date(Math.max(now.getTime(), (current.analysisStartedAt?.getTime() ?? 0) + 1));
-    const record = await tx.prChangeLog.update({
-      where: { id: current.id },
-      data: { analysisStatus: 'processing', analysisAttempts: { increment: 1 }, analysisStartedAt: startedAt },
-      include: { files: { orderBy: { path: 'asc' } } },
-    });
-    return { exhausted: false as const, record };
-  });
-}
-
-export function analysisGuard(record: PrChangeLog): Prisma.PrChangeLogWhereInput {
-  return {
-    id: record.id, contentHash: record.contentHash, analysisStatus: 'processing',
-    analysisAttempts: record.analysisAttempts, analysisStartedAt: record.analysisStartedAt,
-  };
+  return { ...recordDto(record), review: record.review, files: record.files.map(fileDto) };
 }
