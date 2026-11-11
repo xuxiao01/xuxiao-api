@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -8,8 +8,6 @@ import { Client } from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PrismaClient } from '../src/generated/client';
 import type * as Service from '../src/modules/pr-change-log/pr-change-log.service';
-import type * as Worker from '../src/modules/pr-change-log/pr-change-log.worker';
-import type * as AI from '../src/modules/pr-change-log/pr-change-log.ai';
 import type { PrChangeLogConfig } from '../src/modules/pr-change-log/pr-change-log.config';
 
 const databaseUrl = process.env.PR_CHANGE_LOG_TEST_DATABASE_URL;
@@ -23,8 +21,6 @@ let admin: string;
 let visitor: string;
 let config: PrChangeLogConfig;
 let service: typeof Service;
-let worker: typeof Worker;
-let ai: typeof AI;
 const ingestToken = 'isolated-pr-change-log-test-token-only-32-characters';
 const input = (number = 48, run = '1') => ({
   repository: 'owner/repo', number, title: `配置 ${number}`, author: 'developer',
@@ -34,7 +30,10 @@ const input = (number = 48, run = '1') => ({
   files: [{ path: 'web/editor.js', status: 'modified', additions: 1, deletions: 1,
     patch: '@@ -1 +1 @@\n-old\n+new', patchStatus: 'available' }],
 });
-const result = { changeType: 'frontend', changeSummary: '简化编辑器', partial: false };
+const reviewed = () => ({ changeType: 'frontend', changeSummary: '简化编辑器', review: {
+  status: 'succeeded', conclusion: 'no_concerns_found', headSha: 'a'.repeat(40), baseSha: 'b'.repeat(40),
+  runUrl: 'https://github.com/owner/repo/actions/runs/123', coverage: { status: 'full' }, findings: [],
+} });
 
 async function request(method: string, path: string, body?: unknown, token: string | null = admin) {
   const response = await fetch(base + (path.startsWith('/api/') ? path : '/api/pr-change-log' + path), {
@@ -65,16 +64,14 @@ suite('PR 记录：隔离 PostgreSQL 与真实 HTTP（AI 使用桩）', () => {
     await control.query(readFileSync('prisma/migrations/20250622000000_init_user/migration.sql', 'utf8'));
     await control.query('ALTER TABLE "User" ADD COLUMN public_weekly_reports_enabled BOOLEAN NOT NULL DEFAULT false');
     await control.query(readFileSync('prisma/migrations/20261111000000_add_pr_change_log/migration.sql', 'utf8'));
+    await control.query(readFileSync('prisma/migrations/20261111160000_add_pr_change_log_review/migration.sql', 'utf8'));
     vi.stubEnv('DATABASE_URL', databaseUrl!);
     vi.stubEnv('APP_MODULES', 'pr-change-log');
     vi.stubEnv('JWT_SECRET', 'isolated-pr-change-log-user-jwt-test');
-    vi.stubEnv('PR_CHANGE_LOG_ADMIN_USER_ID', '2');
     vi.stubEnv('PR_CHANGE_LOG_REPOSITORIES', 'owner/repo');
     vi.stubEnv('PR_CHANGE_LOG_INGEST_TOKEN', ingestToken);
     db = load('../dist/lib/prisma').prisma;
     service = load('../dist/modules/pr-change-log/pr-change-log.service');
-    worker = load('../dist/modules/pr-change-log/pr-change-log.worker');
-    ai = load('../dist/modules/pr-change-log/pr-change-log.ai');
     config = load('../dist/modules/pr-change-log/pr-change-log.config').prChangeLogConfig;
     const { hash } = await import('bcrypt');
     const passwordHash = await hash('test-password', 4);
@@ -98,19 +95,20 @@ suite('PR 记录：隔离 PostgreSQL 与真实 HTTP（AI 使用桩）', () => {
     vi.unstubAllEnvs();
   });
 
-  it('复用登录，普通／未登录／删除账号拒绝，机器密钥不能查询', async () => {
+  it('复用登录，普通用户可读，未登录／删除账号拒绝，机器密钥不能查询', async () => {
     const login = await request('POST', '/api/auth/login', { email: '2@example.test', password: 'test-password' }, null);
     expect(login.status).toBe(200);
     expect((await request('GET', '/me', undefined, login.body.data.token)).body.data).toEqual({ userId: 2, canRead: true });
-    for (const [token, status] of [[null, 401], [visitor, 403], [ingestToken, 401]] as const) {
+    for (const [token, status] of [[null, 401], [visitor, 200], [ingestToken, 401]] as const) {
       expect((await request('GET', '/records', undefined, token)).status).toBe(status);
     }
     const { signToken } = load('../dist/modules/weekly-lab/auth/jwt');
     expect((await request('GET', '/records', undefined, signToken({ userId: 9999 }))).status).toBe(401);
-    const previous = config.PR_CHANGE_LOG_ADMIN_USER_ID;
-    config.PR_CHANGE_LOG_ADMIN_USER_ID = undefined;
-    try { expect((await request('GET', '/records')).status).toBe(403); }
-    finally { config.PR_CHANGE_LOG_ADMIN_USER_ID = previous; }
+    const { sign } = load('jsonwebtoken');
+    for (const claims of [{ userId: 2, purpose: 'mianjing', role: 'guest' }, { userId: 2, exp: 1 }]) {
+      expect((await request('GET', '/me', undefined, sign(claims, process.env.JWT_SECRET))).status).toBe(401);
+    }
+
   });
 
   it('机器入口拒绝用户 JWT、未知仓库、缺失配置和坏参数', async () => {
@@ -150,6 +148,17 @@ suite('PR 记录：隔离 PostgreSQL 与真实 HTTP（AI 使用桩）', () => {
     expect(detail.body.data).not.toHaveProperty('contentHash');
   });
 
+  it('兼容旧版内容哈希，重复旧上报不误报冲突', async () => {
+    const { id } = await send();
+    const normalized = load('../dist/modules/pr-change-log/pr-change-log.schema').ingestSchema.parse(input());
+    const content = service.normalizeContent(normalized);
+    const { review: _review, changeType: _type, changeSummary: _summary, ...legacy } = content;
+    await db.prChangeLog.update({ where: { id }, data: { contentHash: createHash('sha256').update(JSON.stringify(legacy)).digest('hex') } });
+    expect((await send()).status).toBe('unchanged');
+    expect((await send(input(48, '2'))).status).toBe('unchanged');
+    expect((await request('POST', '/ingest', { ...input(48, '2'), title: '仍不能改内容' }, ingestToken)).status).toBe(409);
+  });
+
   it('并发首次上报最终保留最新运行，同一次运行按 attempt 更新', async () => {
     await Promise.all([send(input(48, '100')), send({ ...input(48, '101'), title: '新版' })]);
     let record = await db.prChangeLog.findFirstOrThrow();
@@ -163,14 +172,14 @@ suite('PR 记录：隔离 PostgreSQL 与真实 HTTP（AI 使用桩）', () => {
 
   it('更新原 PR 并完整替换文件，清除旧分析结果', async () => {
     const first = await send();
-    await worker.runAnalysisOnce(async () => result);
-    const changed = input(48, '2'); changed.headSha = 'b'.repeat(40); changed.files[0]!.path = 'new.ts';
+    await send({ ...input(48, '2'), ...reviewed() });
+    const changed = input(48, '3'); changed.headSha = 'b'.repeat(40); changed.files[0]!.path = 'new.ts';
     expect((await send(changed)).id).toBe(first.id);
     const detail = (await request('GET', `/records/${first.id}`)).body.data;
     expect(detail.files.map((file: any) => file.path)).toEqual(['new.ts']);
     expect(detail.changeType).toBe('unknown');
     expect(detail.changeSummary).toBeNull();
-    expect(detail.analysisStatus).toBe('pending');
+    expect(detail.review).toBeNull();
   });
 
   it('文件写入失败时 PR 和旧文件一起回滚', async () => {
@@ -219,93 +228,25 @@ suite('PR 记录：隔离 PostgreSQL 与真实 HTTP（AI 使用桩）', () => {
     expect(detail.files[2]).toMatchObject({ binary: false, patch: null });
   });
 
-  it('AI 成功与同内容新运行复用，不重复领取', async () => {
-    const { id } = await send();
-    const analyze = vi.fn().mockResolvedValue(result);
-    expect(await worker.runAnalysisOnce(analyze)).toBe('succeeded');
-    await send(input(48, '2'));
-    expect(await worker.runAnalysisOnce(analyze)).toBe('idle');
-    expect(analyze).toHaveBeenCalledTimes(1);
-    expect((await request('GET', `/records/${id}`)).body.data).toMatchObject({ changeType: 'frontend', changeSummary: '简化编辑器', analysisCoverage: 'full' });
-  });
-
-  it('临时失败最多两次，失败仍可看代码；手动重试防重复', async () => {
-    const { id } = await send();
-    expect((await request('POST', `/records/${id}/reanalyze`)).status).toBe(409);
-    const analyze = vi.fn().mockRejectedValue(new ai.AnalysisError(true));
-    expect(await worker.runAnalysisOnce(analyze)).toBe('retry');
-    expect(await worker.runAnalysisOnce(analyze)).toBe('failed');
-    expect(await worker.runAnalysisOnce(analyze)).toBe('idle');
-    expect(analyze).toHaveBeenCalledTimes(2);
+  it('存储本次审查，列表不读取大结果；旧接口已停用且不改变数据', async () => {
+    const { id } = await send({ ...input(), ...reviewed() });
     const detail = (await request('GET', `/records/${id}`)).body.data;
-    expect(detail.analysisStatus).toBe('failed');
+    expect(detail).toMatchObject({ changeType: 'frontend', changeSummary: '简化编辑器', review: { status: 'succeeded' } });
+    expect((await request('GET', '/records')).body.data.items[0]).not.toHaveProperty('review');
+    const before = await db.prChangeLog.findUniqueOrThrow({ where: { id } });
+    expect((await request('POST', `/records/${id}/reanalyze`, undefined, visitor)).status).toBe(410);
+    expect(await db.prChangeLog.findUniqueOrThrow({ where: { id } })).toEqual(before);
+  });
+  it('失败与部分覆盖不丢代码，过期审查拒绝且不覆盖已保存结果', async () => {
+    const { id } = await send({ ...input(), ...reviewed() });
+    expect((await request('POST', '/ingest', { ...input(48, '2'), headSha: 'c'.repeat(40), ...reviewed() }, ingestToken)).status).toBe(400);
+    await send({ ...input(48, '2'), review: { ...reviewed().review, status: 'failed', conclusion: 'unknown', coverage: { status: 'unknown' } } });
+    const detail = (await request('GET', `/records/${id}`)).body.data;
+    expect(detail.changeType).toBe('unknown');
+    expect(detail.review.status).toBe('failed');
     expect(detail.files[0].patch).toContain('+new');
-    expect((await request('POST', `/records/${id}/reanalyze`, undefined, visitor)).status).toBe(403);
-    expect((await request('POST', `/records/${id}/reanalyze`)).status).toBe(202);
-    expect((await request('POST', `/records/${id}/reanalyze`)).status).toBe(409);
-    expect(await worker.runAnalysisOnce(async () => ({ ...result, partial: true }))).toBe('succeeded');
-    expect((await request('GET', `/records/${id}`)).body.data.analysisCoverage).toBe('partial');
-  });
-
-  it('永久失败一次结束，非法模型结果不入库', async () => {
-    await send();
-    expect(await worker.runAnalysisOnce(async () => { throw new ai.AnalysisError(false); })).toBe('failed');
-    const { id } = await send(input(49));
-    expect(await worker.runAnalysisOnce(async () => ({ ...result, changeType: 'invented' }))).toBe('failed');
-    expect((await request('GET', `/records/${id}`)).body.data.changeType).toBe('unknown');
-  });
-
-  it('新内容入库后，旧模型结果不能覆盖新版本', async () => {
-    const { id } = await send();
-    let complete!: (value: typeof result) => void;
-    let started!: () => void;
-    const waiting = new Promise<void>((resolve) => { started = resolve; });
-    const job = worker.runAnalysisOnce(async () => {
-      started();
-      return new Promise<typeof result>((resolve) => { complete = resolve; });
-    });
-    await waiting;
-    await send({ ...input(48, '2'), headSha: 'b'.repeat(40) });
-    complete(result);
-    expect(await job).toBe('stale');
-    expect((await request('GET', `/records/${id}`)).body.data.analysisStatus).toBe('pending');
-    expect(await worker.runAnalysisOnce(async () => ({ ...result, changeType: 'agent' }))).toBe('succeeded');
-    expect((await request('GET', `/records/${id}`)).body.data.changeType).toBe('agent');
-  });
-
-  it('并发 worker 只领取一次；过期租约恢复且旧持有者失效', async () => {
-    const { id } = await send();
-    const now = new Date('2030-01-01T00:00:00Z');
-    const claims = await Promise.all([service.claimAnalysis(db, now), service.claimAnalysis(db, now)]);
-    expect(claims.filter(Boolean)).toHaveLength(1);
-    const old = claims.find((claim) => claim && !claim.exhausted)!;
-    if (old.exhausted) throw new Error('unexpected exhausted claim');
-    expect(await worker.runAnalysisOnce(async () => result, db, new Date(now.getTime() + service.ANALYSIS_LEASE_MS + 1))).toBe('succeeded');
-    expect((await db.prChangeLog.updateMany({ where: service.analysisGuard(old.record), data: { changeSummary: '旧租约错误结果' } })).count).toBe(0);
-    expect((await db.prChangeLog.findUniqueOrThrow({ where: { id } })).analysisAttempts).toBe(2);
-  });
-
-  it('第二次进程中断后不会产生第三次模型调用', async () => {
-    await send();
-    const now = new Date();
-    await service.claimAnalysis(db, now);
-    await service.claimAnalysis(db, new Date(now.getTime() + service.ANALYSIS_LEASE_MS + 1));
-    const analyze = vi.fn().mockResolvedValue(result);
-    expect(await worker.runAnalysisOnce(analyze, db, new Date(now.getTime() + 2 * service.ANALYSIS_LEASE_MS + 2))).toBe('failed');
-    expect(analyze).not.toHaveBeenCalled();
-  });
-
-  it('手动再分析即使时间相同也换领取标识，数据库只新增两张表', async () => {
-    const { id } = await send();
-    const now = new Date();
-    const old = await service.claimAnalysis(db, now);
-    if (!old || old.exhausted) throw new Error('missing claim');
-    await db.prChangeLog.updateMany({ where: service.analysisGuard(old.record), data: { analysisStatus: 'failed' } });
-    await service.reanalyze(id);
-    const next = await service.claimAnalysis(db, now);
-    if (!next || next.exhausted) throw new Error('missing claim');
-    expect(next.record.analysisStartedAt!.getTime()).toBeGreaterThan(old.record.analysisStartedAt!.getTime());
-    expect((await db.prChangeLog.updateMany({ where: service.analysisGuard(old.record), data: { analysisStatus: 'succeeded' } })).count).toBe(0);
+    await send({ ...input(48, '3'), ...reviewed(), review: { ...reviewed().review, coverage: { status: 'partial', skippedFiles: ['a.ts'] } } });
+    expect((await request('GET', `/records/${id}`)).body.data.review.coverage.status).toBe('partial');
     const tables = (await control.query("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename")).rows.map((row) => row.tablename);
     expect(tables).toEqual(['User', 'pr_change_log_files', 'pr_change_logs']);
   });

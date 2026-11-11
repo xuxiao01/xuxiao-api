@@ -32,6 +32,31 @@ const fileSchema = z.object({
   }
 });
 
+const shaSchema = z.string().regex(/^(?:[a-f\d]{40}|[a-f\d]{64})$/i).transform((value) => value.toLowerCase());
+export const reviewSchema = z.object({
+  status: z.enum(['succeeded', 'failed', 'unavailable']),
+  conclusion: z.enum(['no_concerns_found', 'needs_review', 'changes_required', 'unknown']).default('unknown'),
+  headSha: shaSchema,
+  baseSha: shaSchema.nullable().default(null),
+  runUrl: githubUrl,
+  coverage: z.object({
+    status: z.enum(['full', 'partial', 'unknown']),
+    skippedFiles: z.array(path).max(3000).default([]),
+    partialFiles: z.array(path).max(3000).default([]),
+  }).strict(),
+  findings: z.array(z.object({
+    path, startLine: count.nullable().default(null), endLine: count.nullable().default(null),
+    title: z.string().max(500), body: z.string().max(10_000),
+  }).strict().refine((finding) => finding.startLine === null || finding.endLine === null || finding.endLine >= finding.startLine, '问题结束行不能小于开始行')).max(100).default([]),
+}).strict().superRefine((review, ctx) => {
+  if (Buffer.byteLength(JSON.stringify(review), 'utf8') > 256 * 1024) {
+    ctx.addIssue({ code: 'custom', message: '审查结果不能超过 256 KiB' });
+  }
+  if (review.coverage.status === 'full' && (review.coverage.skippedFiles.length || review.coverage.partialFiles.length || review.status !== 'succeeded')) {
+    ctx.addIssue({ code: 'custom', message: '审查失败或存在遗漏时不能声明完整覆盖' });
+  }
+});
+
 export const ingestSchema = z.object({
   repository: repositorySchema,
   number: z.number().int().positive().max(2147483647),
@@ -45,6 +70,9 @@ export const ingestSchema = z.object({
   sourceRunNumber: z.string().regex(/^[1-9]\d{0,18}$/).refine((value) => BigInt(value) <= 9223372036854775807n, '运行编号过大'),
   sourceRunAttempt: z.number().int().positive().max(2147483647),
   files: z.array(fileSchema).max(3000),
+  changeType: changeTypeSchema.default('unknown'),
+  changeSummary: z.string().trim().max(1000).nullable().default(null),
+  review: reviewSchema.nullable().default(null),
 }).strict().superRefine((input, ctx) => {
   if (new Set(input.files.map((file) => file.path)).size !== input.files.length) {
     ctx.addIssue({ code: 'custom', path: ['files'], message: '文件路径不能重复' });
@@ -61,6 +89,21 @@ export const ingestSchema = z.object({
       ctx.addIssue({ code: 'custom', path: ['files'], message: '文件地址必须属于同一仓库' });
     }
   }
+  if (input.review) {
+    const runUrl = new URL(input.review.runUrl);
+    const parts = runUrl.pathname.toLowerCase().split('/');
+    if (input.review.headSha !== input.headSha || parts.slice(1, 3).join('/') !== input.repository
+      || parts[3] !== 'actions' || parts[4] !== 'runs' || !/^[0-9]+$/.test(parts[5] ?? '')
+      || parts.length !== 6 || runUrl.search || runUrl.hash) {
+      ctx.addIssue({ code: 'custom', path: ['review'], message: '审查结果必须属于本 PR 提交和同仓库的 Actions 运行' });
+    }
+    if (!input.filesComplete && input.review.coverage.status === 'full') {
+      ctx.addIssue({ code: 'custom', path: ['review'], message: '文件列表不完整时不能声明完整覆盖' });
+    }
+  }
+  if (input.changeType !== 'unknown' && input.review?.status !== 'succeeded') {
+    ctx.addIssue({ code: 'custom', path: ['changeType'], message: '明确分类必须附带成功的本轮审查结果' });
+  }
 });
 
 export type IngestInput = z.infer<typeof ingestSchema>;
@@ -74,8 +117,3 @@ export const listQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(50),
 }).strict();
 export type ListQuery = z.infer<typeof listQuerySchema>;
-
-export const analysisResultSchema = z.object({
-  changeType: changeTypeSchema,
-  changeSummary: z.string().trim().min(1).max(1000),
-}).strict();

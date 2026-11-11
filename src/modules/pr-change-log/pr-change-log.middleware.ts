@@ -13,12 +13,10 @@ export const requireViewer: RequestHandler = async (req, res, next) => {
     if (!header?.startsWith('Bearer ')) throw new AppError(401, '请先登录');
     let payload;
     try { payload = verifyToken(header.slice(7)); } catch { throw new AppError(401, '登录已失效'); }
+    if (typeof payload !== 'object' || payload === null || 'purpose' in payload || 'role' in payload) throw new AppError(401, '请使用用户账号登录');
     if (!Number.isInteger(payload.userId) || payload.userId < 1 || payload.userId > 2147483647) throw new AppError(401, '登录已失效');
     const user = await prisma.user.findUnique({ where: { id: payload.userId }, select: { id: true } });
     if (!user) throw new AppError(401, '账号不存在');
-    if (!prChangeLogConfig.PR_CHANGE_LOG_ADMIN_USER_ID || user.id !== prChangeLogConfig.PR_CHANGE_LOG_ADMIN_USER_ID) {
-      throw new AppError(403, '此账号没有 PR 记录访问权限');
-    }
     req.user = payload;
     next();
   } catch (error) { next(error); }

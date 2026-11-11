@@ -211,7 +211,7 @@ DATABASE_URL="你的生产库连接串" npx prisma migrate deploy
 
 ## 后续计划
 
-PR 改动记录模块 `pr-change-log`：管理员登录查询、Actions 密钥上报、两张表保存最新 PR 和文件差异，独立 worker 生成 AI 分类及中文说明。接口、配置、迁移和隔离测试见 [PR 记录模块文档](doc/pr-change-log/README.md)。当前只做本地开发，未应用业务库迁移、未接入工作流或部署；前端鉴权适配另行处理。
+PR 改动记录模块 `pr-change-log`：所有有效登录用户查询，Actions 使用独立密钥上报；两张表保存最新 PR、文件差异和 PR-Agent 审查结果，后端不另调 AI。接口、兼容迁移和隔离测试见 [PR 记录模块文档](doc/pr-change-log/README.md)。业务库迁移与发布需按现有部署流程执行；本地环境密钥不随代码上传。
 
 - 图片上传接口（`POST /api/uploads/images`）
 - 扩展项目、评论、点赞等模块

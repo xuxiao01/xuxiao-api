@@ -3,7 +3,7 @@ import type { PrChangeLog, PrChangeLogFile } from '../../generated/client';
 export const listSelect = {
   id: true, repository: true, prNumber: true, title: true, author: true, url: true,
   prCreatedAt: true, headSha: true, fileCount: true, filesComplete: true,
-  changeType: true, changeSummary: true, analysisStatus: true, analysisPartial: true, updatedAt: true,
+  changeType: true, changeSummary: true, updatedAt: true,
 } as const;
 
 type ListRecord = Pick<PrChangeLog, keyof typeof listSelect>;
@@ -15,8 +15,7 @@ export function recordDto(record: ListRecord) {
     createdAt: record.prCreatedAt.toISOString(), updatedAt: record.updatedAt.toISOString(),
     sha: record.headSha, headSha: record.headSha, fileCount: record.fileCount,
     filesComplete: record.filesComplete, changeType: record.changeType,
-    changeSummary: record.changeSummary, analysisStatus: record.analysisStatus,
-    analysisCoverage: record.analysisStatus === 'succeeded' ? (record.analysisPartial ? 'partial' : 'full') : null,
+    changeSummary: record.changeSummary,
   };
 }
 
