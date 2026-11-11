@@ -2,6 +2,10 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { Client } from 'pg';
 import {
+  cities,
+  cityAdcodePrefixes,
+} from '../src/modules/crush-date/content-item/content-item.config';
+import {
   afterAll,
   beforeAll,
   describe,
@@ -14,6 +18,27 @@ const testSchema = 'crush_date_content_item_migration_test';
 const describeWithDatabase = databaseUrl ? describe : describe.skip;
 let client: Client;
 let legacyRowsBefore: Record<string, Record<string, unknown>>;
+let rowsBeforeCityMigration: Record<string, unknown>[];
+let constraintsBeforeCityMigration: Record<string, unknown>[];
+let indexesBeforeCityMigration: Record<string, unknown>[];
+
+async function readOtherConstraints() {
+  return (await client.query(`
+    SELECT conname, pg_get_constraintdef(oid) AS definition
+    FROM pg_constraint
+    WHERE conrelid = 'crush_date_content_items'::regclass
+      AND conname <> 'crush_date_content_items_city_code_check'
+    ORDER BY conname
+  `)).rows;
+}
+
+async function readIndexes() {
+  return (await client.query(`
+    SELECT indexname, indexdef FROM pg_indexes
+    WHERE schemaname = $1 AND tablename = 'crush_date_content_items'
+    ORDER BY indexname
+  `, [testSchema])).rows;
+}
 
 function assertTestDatabase(url: string): void {
   const databaseName = new URL(url).pathname.slice(1);
@@ -88,10 +113,22 @@ describeWithDatabase('Crush Date content item migration', () => {
       'prisma/migrations/20260817000000_add_content_item_poi_location/migration.sql',
     ), 'utf8');
     await client.query(poiLocationMigration);
+
+    rowsBeforeCityMigration = (await client.query(`
+      SELECT * FROM "crush_date_content_items" ORDER BY id
+    `)).rows;
+    constraintsBeforeCityMigration = await readOtherConstraints();
+    indexesBeforeCityMigration = await readIndexes();
+
+    const cityMigration = readFileSync(resolve(
+      'prisma/migrations/20261025000000_add_ningxia_content_item_cities/migration.sql',
+    ), 'utf8');
+    await client.query(cityMigration);
   });
 
   afterAll(async () => {
     if (client) {
+      await client.query('ROLLBACK');
       await client.query(`DROP SCHEMA IF EXISTS "${testSchema}" CASCADE`);
       await client.end();
     }
@@ -132,6 +169,68 @@ describeWithDatabase('Crush Date content item migration', () => {
       poi_longitude: null,
       poi_adcode: null,
     });
+  });
+
+  it('扩展城市白名单不改变已有记录、其他约束或索引', async () => {
+    const result = await client.query(`
+      SELECT * FROM "crush_date_content_items" ORDER BY id
+    `);
+    expect(result.rows).toEqual(rowsBeforeCityMigration);
+    expect(await readOtherConstraints()).toEqual(constraintsBeforeCityMigration);
+    expect(await readIndexes()).toEqual(indexesBeforeCityMigration);
+  });
+
+  it('数据库城市白名单与应用城市配置完全一致', async () => {
+    const result = await client.query(`
+      SELECT pg_get_constraintdef(oid) AS definition
+      FROM pg_constraint
+      WHERE conrelid = 'crush_date_content_items'::regclass
+        AND conname = 'crush_date_content_items_city_code_check'
+    `);
+    expect(result.rowCount).toBe(1);
+    const codes = [...result.rows[0].definition.matchAll(/'([^']+)'/g)]
+      .map((match) => match[1]);
+    expect(codes.sort()).toEqual(cities.map((city) => city.code).sort());
+  });
+
+  it.each(cities.flatMap(({ code }) => (
+    (['food', 'place'] as const).flatMap((contentType) => (
+      [false, true].map((withLocation) => ({ code, contentType, withLocation }))
+    ))
+  )))('$code $contentType 可创建，绑定位置：$withLocation', async ({
+    code, contentType, withLocation,
+  }) => {
+    await client.query('BEGIN');
+    try {
+      const result = await client.query(`
+        INSERT INTO "crush_date_content_items" (
+          id, content_type, city_code, category_id, name, type, comment, image,
+          updated_at, poi_provider, poi_id, poi_title, poi_address,
+          poi_latitude, poi_longitude, poi_adcode
+        ) VALUES (
+          $1, $2, $3, $4, '城市迁移测试', '其他', '',
+          'https://example.com/migration-test.png', CURRENT_TIMESTAMP,
+          $5, $6, $7, $8, $9, $10, $11
+        ) RETURNING city_code, content_type, poi_provider, poi_adcode
+      `, [
+        `city-test-${code}-${contentType}-${withLocation}`,
+        contentType,
+        code,
+        contentType === 'food' ? '9' : '7',
+        ...(withLocation
+          ? ['tencent', 'test-poi', '测试位置', '测试地址', 38, 106,
+            cityAdcodePrefixes[code].padEnd(6, '0')]
+          : [null, null, null, null, null, null, null]),
+      ]);
+      expect(result.rows[0]).toEqual({
+        city_code: code,
+        content_type: contentType,
+        poi_provider: withLocation ? 'tencent' : null,
+        poi_adcode: withLocation ? cityAdcodePrefixes[code].padEnd(6, '0') : null,
+      });
+    } finally {
+      await client.query('ROLLBACK');
+    }
   });
 
   it('位置约束只接受完整合法的腾讯 POI', async () => {

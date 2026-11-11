@@ -2,6 +2,10 @@ import type { Express } from 'express';
 import type { ApiModule } from './module';
 
 const moduleLoaders: Record<string, () => ApiModule> = {
+  'pr-change-log': () => {
+    const { prChangeLogModule } = require('./pr-change-log/pr-change-log.module');
+    return prChangeLogModule;
+  },
   mianjing: () => {
     const { mianjingModule } = require('./mianjing/mianjing.module');
     return mianjingModule;
@@ -40,8 +44,8 @@ function getEnabledModuleNames(): string[] {
 export function registerModules(app: Express): string[] {
   const moduleNames = getEnabledModuleNames();
 
-  // Reuse the same account endpoints when running mianjing without weekly-lab.
-  if (moduleNames.includes('mianjing') && !moduleNames.includes('weekly-lab')) {
+  // Product modules reuse the existing account endpoints, registered exactly once.
+  if (moduleNames.some((name) => ['mianjing', 'pr-change-log'].includes(name)) && !moduleNames.includes('weekly-lab')) {
     const authRoutes = require('./weekly-lab/auth/auth.routes').default;
     app.use('/api/auth', authRoutes);
   }

@@ -264,3 +264,48 @@ model MianjingOccurrence {
   @@index([companyId])
   @@map("mianjing_occurrences")
 }
+
+model PrChangeLog {
+  id                   String            @id @default(uuid()) @db.Uuid
+  repository           String
+  prNumber             Int               @map("pr_number")
+  title                String
+  author               String
+  url                  String
+  prCreatedAt          DateTime          @map("pr_created_at") @db.Timestamptz(3)
+  headSha              String            @map("head_sha")
+  fileCount            Int               @map("file_count")
+  filesComplete        Boolean           @map("files_complete")
+  changeType           String            @default("unknown") @map("change_type")
+  changeSummary        String?           @map("change_summary")
+  analysisStatus       String            @default("pending") @map("analysis_status")
+  analysisPartial      Boolean           @default(false) @map("analysis_partial")
+  contentHash          String            @map("content_hash")
+  sourceRunNumber      BigInt            @map("source_run_number")
+  sourceRunAttempt     Int               @map("source_run_attempt")
+  analysisAttempts     Int               @default(0) @map("analysis_attempts")
+  analysisStartedAt    DateTime?         @map("analysis_started_at") @db.Timestamptz(3)
+  updatedAt            DateTime          @updatedAt @map("updated_at") @db.Timestamptz(3)
+  files                PrChangeLogFile[]
+
+  @@unique([repository, prNumber])
+  @@index([prCreatedAt(sort: Desc), id(sort: Desc)])
+  @@map("pr_change_logs")
+}
+
+model PrChangeLogFile {
+  id           String      @id @default(uuid()) @db.Uuid
+  prId         String      @map("pr_id") @db.Uuid
+  path         String
+  previousPath String?     @map("previous_path")
+  status       String
+  additions    Int?
+  deletions    Int?
+  patch        String?
+  patchStatus  String      @map("patch_status")
+  url          String?
+  pr           PrChangeLog @relation(fields: [prId], references: [id], onDelete: Cascade)
+
+  @@unique([prId, path])
+  @@map("pr_change_log_files")
+}
